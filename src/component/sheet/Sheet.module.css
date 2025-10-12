@@ -1,3 +1,8 @@
 .container {
+  display: grid;
+
+  /* grid-template: <rows> 2행 1:1 / <columns> 2열 1:1; */
+  /* 나중 `${CELL_WIDTH}px 1fr`  로 바꿔야함 */
+  grid-template: repeat(2, 1fr) / repeat(2, 1fr);
   background-color: antiquewhite;
 }
