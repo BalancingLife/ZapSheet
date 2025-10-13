@@ -1,0 +1,9 @@
+.container {
+  background-color: steelblue;
+  overflow: auto;
+}
+
+.grid {
+  display: grid;
+  gap: 0;
+}
