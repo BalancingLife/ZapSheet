@@ -8,7 +8,7 @@ type CellProps = {
 export default function Cell({ row, col }: CellProps) {
   return (
     <div className={styles.container}>
-      {row + 1}열,{getColName(col)}행
+      {row + 1},{getColName(col)}
     </div>
   );
 }

@@ -1,9 +1,32 @@
 .container {
   display: grid;
-
+  position: relative;
   /* grid-template: <rows> 2행 1:1 / <columns> 2열 1:1; */
   /* 나중 `${CELL_WIDTH}px 1fr`  로 바꿔야함 */
   grid-template: repeat(2, 1fr) / repeat(2, 1fr);
-  background-color: antiquewhite;
+  background-color: #ffffff;
   overflow: auto;
+}
+
+.corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  background-color: #ffffff;
+  z-index: 5;
+  border: 0.1px solid black;
+}
+
+.colHeader {
+  position: sticky;
+  top: 0;
+  background-color: #ffffff;
+  z-index: 4;
+}
+
+.rowHeader {
+  position: sticky;
+  left: 0;
+  background-color: #ffffff;
+  z-index: 4;
 }
