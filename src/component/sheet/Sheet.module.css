@@ -5,4 +5,5 @@
   /* 나중 `${CELL_WIDTH}px 1fr`  로 바꿔야함 */
   grid-template: repeat(2, 1fr) / repeat(2, 1fr);
   background-color: antiquewhite;
+  overflow: auto;
 }

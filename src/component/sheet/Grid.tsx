@@ -1,12 +1,13 @@
-import { useState } from "react";
 import styles from "./Grid.module.css";
 import Cell from "./Cell";
 import { ROW_COUNT, COLUMN_COUNT } from "./SheetConstants";
 
-export default function Grid() {
-  const [cellWidth, setCellWidth] = useState<number>(80);
-  const [cellHeight, setCellHeight] = useState<number>(80);
+interface GridProps {
+  cellWidth: number;
+  cellHeight: number;
+}
 
+export default function Grid({ cellWidth, cellHeight }: GridProps) {
   // Cell 컴포넌트 Array.from({length}).map 이용하여 ROWS.COUNT * COLUMNS.COUNT 개 만들기
   const cells = Array.from({ length: ROW_COUNT * COLUMN_COUNT }).map((_, i) => {
     const row = Math.floor(i / COLUMN_COUNT);

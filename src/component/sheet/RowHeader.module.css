@@ -1,0 +1,6 @@
+.rowHeader {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 0.1px solid black;
+}

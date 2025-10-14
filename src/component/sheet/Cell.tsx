@@ -1,5 +1,5 @@
 import styles from "./Cell.module.css";
-
+import { getColName } from "@/utils/getColName";
 type CellProps = {
   row: number;
   col: number;
@@ -8,7 +8,7 @@ type CellProps = {
 export default function Cell({ row, col }: CellProps) {
   return (
     <div className={styles.container}>
-      Cell 입니다.{row}열,{col}행 입니다.
+      {row + 1}열,{getColName(col)}행
     </div>
   );
 }
