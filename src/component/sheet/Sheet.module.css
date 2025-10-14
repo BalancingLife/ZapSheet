@@ -6,6 +6,9 @@
   grid-template: repeat(2, 1fr) / repeat(2, 1fr);
   background-color: #ffffff;
   overflow: auto;
+  /* user-select 브라우저에서 텍스트/요소가 드래그로 선택될 수 있는지를 결정하는 CSS 속성. */
+  -webkit-user-select: none; /* 크롬, 사파리 호환 */
+  user-select: none;
 }
 
 .corner {
