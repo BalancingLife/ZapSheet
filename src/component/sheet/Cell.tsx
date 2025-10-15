@@ -35,6 +35,7 @@ function Cell({ row, col }: CellProps) {
 
   useEffect(() => {
     if (isEditing) {
+      // requestAnimationFrame 사용으로 렌더 → DOM 붙음 → 다음 프레임에 focus/select” 순서를 보장
       requestAnimationFrame(() => {
         const el = inputRef.current;
         if (el) {
@@ -45,12 +46,12 @@ function Cell({ row, col }: CellProps) {
     }
   }, [isEditing]);
 
-  // 편집 커밋/취소
+  // 편집 커밋
   const commit = (nextVal?: string) => {
     commitEdit(nextVal ?? display);
-    move("down");
   };
 
+  // ESC시 편집 취소, 내용 null 처리
   const cancel = () => {
     cancelEdit();
     setFocus({ row, col });
@@ -77,12 +78,14 @@ function Cell({ row, col }: CellProps) {
             if (e.key === "Enter") {
               e.preventDefault();
               commit(val);
+              move("down"); // enter 시 한칸 아래로 이동
             } else if (e.key === "Escape") {
               e.preventDefault();
               cancel();
             } else if (e.key === "Tab") {
               e.preventDefault();
               commit(val);
+              move("right");
             }
           }}
           onBlur={(e) => commit(e.currentTarget.value)}
