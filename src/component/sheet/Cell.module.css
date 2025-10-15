@@ -6,6 +6,7 @@
   background-color: #ffffff;
   box-sizing: border-box;
   overflow: hidden;
+  white-space: nowrap; /* 한 줄 강제 */
 }
 
 .focused {
