@@ -1,0 +1,6 @@
+.selectionOverlay {
+  position: absolute;
+  pointer-events: none; /* 드래그/클릭에 간섭 X */
+  box-shadow: inset 0 0 0 1px rgb(26, 115, 232); /* 안쪽 border 만들기 */
+  box-sizing: border-box;
+}

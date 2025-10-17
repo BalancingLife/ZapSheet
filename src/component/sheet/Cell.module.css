@@ -1,4 +1,5 @@
 .container {
+  outline: none;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -10,7 +11,11 @@
 }
 
 .focused {
-  border: 2px solid #1a73e8;
+  border: 2px solid rgb(26, 115, 232);
+}
+
+.selected {
+  background-color: #e9effd;
 }
 
 .editorInput {

@@ -17,7 +17,15 @@ function Cell({ row, col }: CellProps) {
   );
 
   // 액션 구독
+
   const setFocus = useSheetStore((s) => s.setFocus);
+
+  // SelectionSlice
+  const isSelected = useSheetStore((s) => s.isSelected(row, col));
+  const startSel = useSheetStore((s) => s.startSelection);
+  const updateSel = useSheetStore((s) => s.updateSelection);
+  const endSel = useSheetStore((s) => s.endSelection);
+
   const move = useSheetStore((s) => s.move);
   const startEdit = useSheetStore((s) => s.startEdit);
   const cancelEdit = useSheetStore((s) => s.cancelEdit);
@@ -99,8 +107,21 @@ function Cell({ row, col }: CellProps) {
       ref={cellRef}
       tabIndex={0} // tabIndex => 이 요소가 키보드 포커스를 받을 수 있게 만든다
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
-      className={`${styles.container} ${isFocused ? styles.focused : ""}`}
-      onMouseDown={() => setFocus({ row, col })}
+      className={`${styles.container} ${isFocused ? styles.focused : ""} ${
+        isSelected ? styles.selected : ""
+      }`}
+      onMouseDown={(e) => {
+        if (e.button !== 0) return; // 좌클릭만
+        // Shift로 기존 선택 확장 지원
+        startSel({ row, col }, e.shiftKey);
+        setFocus({ row, col });
+        // 텍스트 드래그 방지
+        e.preventDefault();
+      }}
+      onMouseEnter={(e) => {
+        if (e.buttons & 1) updateSel({ row, col }); // 드래그 중일 때만 갱신
+      }}
+      onMouseUp={() => endSel()}
       onFocus={() => setFocus({ row, col })}
       onDoubleClick={() => startEdit({ row, col })}
       onKeyDown={(e) => {

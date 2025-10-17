@@ -6,8 +6,8 @@ import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 
 export default function Sheet() {
-  const [cellWidth, setCellWidth] = useState(100);
-  const [cellHeight, setCellHeight] = useState(25);
+  const [cellWidth] = useState(100);
+  const [cellHeight] = useState(25);
   const [rowHeaderWidth] = useState(48);
   const [colHeaderHeight] = useState(28);
 

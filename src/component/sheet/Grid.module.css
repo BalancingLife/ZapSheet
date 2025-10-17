@@ -4,5 +4,6 @@
 
 .grid {
   display: grid;
+  position: relative;
   gap: 0;
 }
