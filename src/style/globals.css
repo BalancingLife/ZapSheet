@@ -1,0 +1,7 @@
+:root {
+  --sheet-selection-bg: #e9effd;
+}
+
+.selected {
+  background-color: var(--sheet-selection-bg) !important;
+}
