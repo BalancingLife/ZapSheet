@@ -1,4 +1,4 @@
-import { memo, useRef, useEffect } from "react";
+import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";
 import { getColName } from "@/utils/getColName";
 import { useSheetStore } from "./store/useSheetStore";
@@ -15,8 +15,6 @@ function Cell({ row, col }: CellProps) {
   const isEditing = useSheetStore(
     (s) => s.editing?.row === row && s.editing?.col === col
   );
-
-  // 액션 구독
 
   const setFocus = useSheetStore((s) => s.setFocus);
 
@@ -65,6 +63,35 @@ function Cell({ row, col }: CellProps) {
     setFocus({ row, col });
   };
 
+  //  Shift면 포커스 금지 + 브라우저 포커스 이동 차단
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return; // 좌클릭만
+      const extend = e.shiftKey === true;
+
+      // 텍스트 선택/포커스 이동 방지 (특히 Shift-클릭에서 DOM 포커스 튀는 것 막기)
+      e.preventDefault();
+
+      startSel({ row, col }, extend);
+
+      // Shift 아닐 때만 포커스 이동 (기준점 갱신)
+      if (!extend) setFocus({ row, col });
+    },
+    [row, col, startSel, setFocus]
+  );
+
+  const onMouseEnter = useCallback(() => {
+    // 좌클릭 드래그 중일 때만 선택 갱신
+    // (마우스 버튼 상태는 e.buttons를 쓰지만, 간단히 isSelecting 플래그로도 충분)
+    if (useSheetStore.getState().isSelecting) {
+      updateSel({ row, col });
+    }
+  }, [row, col, updateSel]);
+
+  const onMouseUp = useCallback(() => {
+    endSel();
+  }, [endSel]);
+
   if (isEditing) {
     return (
       <div
@@ -108,21 +135,11 @@ function Cell({ row, col }: CellProps) {
       tabIndex={0} // tabIndex => 이 요소가 키보드 포커스를 받을 수 있게 만든다
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
       className={`${styles.container} ${isFocused ? styles.focused : ""} ${
-        isSelected ? styles.selected : ""
+        isSelected ? "selected" : ""
       }`}
-      onMouseDown={(e) => {
-        if (e.button !== 0) return; // 좌클릭만
-        // Shift로 기존 선택 확장 지원
-        startSel({ row, col }, e.shiftKey);
-        setFocus({ row, col });
-        // 텍스트 드래그 방지
-        e.preventDefault();
-      }}
-      onMouseEnter={(e) => {
-        if (e.buttons & 1) updateSel({ row, col }); // 드래그 중일 때만 갱신
-      }}
-      onMouseUp={() => endSel()}
-      onFocus={() => setFocus({ row, col })}
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}
+      onMouseUp={onMouseUp}
       onDoubleClick={() => startEdit({ row, col })}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === "F2") {

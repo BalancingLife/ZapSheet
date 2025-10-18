@@ -14,10 +14,6 @@
   border: 2px solid rgb(26, 115, 232);
 }
 
-.selected {
-  background-color: #e9effd;
-}
-
 .editorInput {
   width: 100%;
   height: 100%;
