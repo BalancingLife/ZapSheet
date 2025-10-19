@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { ROW_COUNT, COLUMN_COUNT } from "../SheetConstants";
+import {
+  ROW_COUNT,
+  COLUMN_COUNT,
+  ROW_MAX,
+  ROW_MIN,
+  COL_MAX,
+  COL_MIN,
+} from "../SheetConstants";
 
 // --------- types ---------
 export type Pos = { row: number; col: number };
@@ -9,6 +16,21 @@ type LayoutSlice = {
   columnWidths: number[];
   rowHeights: number[];
   initLayout: (defaultColWidth: number, defaultRowHeight: number) => void;
+};
+
+type ResizeState = null | {
+  type: "col" | "row";
+  index: number;
+  startClient: number; // clientX or clientY
+  startSize: number; // 시작 폭/높이
+};
+
+type ResizeSlice = {
+  resizing: ResizeState;
+  startResizeCol: (index: number, clientX: number) => void;
+  startResizeRow: (index: number, clientY: number) => void;
+  updateResize: (clientXY: number) => void;
+  endResize: () => void;
 };
 
 type FocusSlice = {
@@ -49,6 +71,7 @@ type DataSlice = {
 };
 
 type SheetState = LayoutSlice &
+  ResizeSlice &
   FocusSlice &
   SelectionSlice &
   EditSlice &
@@ -82,6 +105,40 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       rowHeights: Array.from({ length: ROW_COUNT }, () => rh),
     });
   },
+
+  // Resize
+  resizing: null,
+
+  startResizeCol: (index, clientX) => {
+    const w = get().columnWidths[index];
+    set({
+      resizing: { type: "col", index, startClient: clientX, startSize: w },
+    });
+  },
+  startResizeRow: (index, clientY) => {
+    const h = get().rowHeights[index];
+    set({
+      resizing: { type: "row", index, startClient: clientY, startSize: h },
+    });
+  },
+  updateResize: (clientXY) => {
+    const rs = get().resizing;
+    if (!rs) return;
+    const delta = clientXY - rs.startClient;
+
+    if (rs.type === "col") {
+      const next = Math.max(COL_MIN, Math.min(COL_MAX, rs.startSize + delta));
+      const arr = get().columnWidths.slice();
+      arr[rs.index] = next;
+      set({ columnWidths: arr });
+    } else {
+      const next = Math.max(ROW_MIN, Math.min(ROW_MAX, rs.startSize + delta));
+      const arr = get().rowHeights.slice();
+      arr[rs.index] = next;
+      set({ rowHeights: arr });
+    }
+  },
+  endResize: () => set({ resizing: null }),
 
   // Focus
   focus: null, // pos(r,c)를 받음

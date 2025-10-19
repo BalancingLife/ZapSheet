@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ROW_COUNT } from "./SheetConstants";
 import styles from "./RowHeader.module.css";
 import { useSheetStore } from "./store/useSheetStore";
@@ -10,6 +11,33 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
   const selectRow = useSheetStore((s) => s.selectRow);
   const selection = useSheetStore((s) => s.selection);
   const rowHeights = useSheetStore((s) => s.rowHeights);
+
+  // 리사이즈 제어
+  const startResizeRow = useSheetStore((s) => s.startResizeRow);
+  const updateResize = useSheetStore((s) => s.updateResize);
+  const endResize = useSheetStore((s) => s.endResize);
+  const resizing = useSheetStore((s) => s.resizing);
+
+  // 전역 mousemove / mouseup 바인딩
+  useEffect(() => {
+    if (!resizing || resizing.type !== "row") return;
+    const onMove = (e: MouseEvent) => {
+      e.preventDefault();
+      updateResize(e.clientY);
+    };
+    const onUp = () => {
+      endResize();
+      document.body.style.cursor = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [resizing, updateResize, endResize]);
 
   const rows = Array.from({ length: ROW_COUNT }).map((_, i) => {
     const selected = !!selection && i >= selection.sr && i <= selection.er;
@@ -28,6 +56,17 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
         title={`${i + 1}`}
       >
         {i + 1}
+        {/* 하단 리사이즈 핸들 */}
+        <div
+          data-resize="row"
+          className={styles.rowResizeHandle}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            startResizeRow(i, e.clientY);
+            document.body.style.cursor = "row-resize";
+          }}
+        />
       </div>
     );
   });

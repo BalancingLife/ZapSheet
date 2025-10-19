@@ -1,10 +1,22 @@
-.ColHeader {
+.container {
+  display: flex;
+}
+
+.colHeader {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 0.1px solid #c4c7c5;
 }
 
-.container {
-  display: flex;
+.colResizeHandle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 8px; /* 히트존 */
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
 }
