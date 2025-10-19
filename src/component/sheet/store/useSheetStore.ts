@@ -5,6 +5,12 @@ import { ROW_COUNT, COLUMN_COUNT } from "../SheetConstants";
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 
+type LayoutSlice = {
+  columnWidths: number[];
+  rowHeights: number[];
+  initLayout: (defaultColWidth: number, defaultRowHeight: number) => void;
+};
+
 type FocusSlice = {
   focus: Pos | null;
   setFocus: (pos: Pos) => void;
@@ -42,7 +48,11 @@ type DataSlice = {
   setValue: (r: number, c: number, v: string) => void;
 };
 
-type SheetState = FocusSlice & SelectionSlice & EditSlice & DataSlice;
+type SheetState = LayoutSlice &
+  FocusSlice &
+  SelectionSlice &
+  EditSlice &
+  DataSlice;
 
 // --------- helpers ---------
 const keyOf = (r: number, c: number) => `${r}:${c}`;
@@ -62,6 +72,17 @@ function normRect(a: Pos, b: Pos): Rect {
 // ---------- store ----------
 
 export const useSheetStore = create<SheetState>((set, get) => ({
+  // Layout
+  columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
+  rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
+
+  initLayout: (cw, rh) => {
+    set({
+      columnWidths: Array.from({ length: COLUMN_COUNT }, () => cw),
+      rowHeights: Array.from({ length: ROW_COUNT }, () => rh),
+    });
+  },
+
   // Focus
   focus: null, // pos(r,c)를 받음
   setFocus: (pos) => set({ focus: pos }),

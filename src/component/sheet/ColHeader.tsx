@@ -4,16 +4,13 @@ import { getColName } from "@/utils/getColName";
 import { useSheetStore } from "./store/useSheetStore";
 
 interface ColHeaderProps {
-  cellWidth: number;
   colHeaderHeight: number;
 }
 
-export default function ColHeader({
-  cellWidth,
-  colHeaderHeight,
-}: ColHeaderProps) {
+export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
   const selectColumn = useSheetStore((s) => s.selectColumn);
   const selection = useSheetStore((s) => s.selection);
+  const columnWidths = useSheetStore((s) => s.columnWidths);
 
   const cols = Array.from({ length: COLUMN_COUNT }).map((_, i) => {
     const selected = !!selection && i >= selection.sc && i <= selection.ec;
@@ -22,9 +19,7 @@ export default function ColHeader({
       <div
         key={i}
         className={selected ? `${styles.ColHeader} selected` : styles.ColHeader}
-        style={{
-          width: `${cellWidth - 1}px`, // 왜 인지 모르겠지만 1 px 오차가 남
-        }}
+        style={{ width: columnWidths[i] - 1 }} // 기존 -1px 조정 유지
         role="button"
         tabIndex={0}
         onMouseDown={(e) => {

@@ -1,15 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styles from "./Sheet.module.css";
 import Corner from "./Corner";
 import ColHeader from "./ColHeader";
 import RowHeader from "./RowHeader";
 import Grid from "./Grid";
+import { useSheetStore } from "./store/useSheetStore";
 
 export default function Sheet() {
   const [cellWidth] = useState(100);
   const [cellHeight] = useState(25);
   const [rowHeaderWidth] = useState(48);
   const [colHeaderHeight] = useState(28);
+
+  const initLayout = useSheetStore((s) => s.initLayout);
+  useEffect(() => {
+    initLayout(cellWidth, cellHeight);
+  }, [cellWidth, cellHeight, initLayout]);
 
   return (
     <div className={styles.container}>
@@ -18,15 +24,15 @@ export default function Sheet() {
       </div>
 
       <div className={styles.colHeader}>
-        <ColHeader cellWidth={cellWidth} colHeaderHeight={colHeaderHeight} />
+        <ColHeader colHeaderHeight={colHeaderHeight} />
       </div>
 
       <div className={styles.rowHeader}>
-        <RowHeader rowHeaderWidth={rowHeaderWidth} cellHeight={cellHeight} />
+        <RowHeader rowHeaderWidth={rowHeaderWidth} />
       </div>
 
       <div className={styles.gridBody}>
-        <Grid cellWidth={cellWidth} cellHeight={cellHeight} />
+        <Grid />
       </div>
     </div>
   );

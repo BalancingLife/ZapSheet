@@ -4,15 +4,12 @@ import { useSheetStore } from "./store/useSheetStore";
 
 interface RowHeaderProps {
   rowHeaderWidth: number;
-  cellHeight: number;
 }
 
-export default function RowHeader({
-  rowHeaderWidth,
-  cellHeight,
-}: RowHeaderProps) {
+export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
   const selectRow = useSheetStore((s) => s.selectRow);
   const selection = useSheetStore((s) => s.selection);
+  const rowHeights = useSheetStore((s) => s.rowHeights);
 
   const rows = Array.from({ length: ROW_COUNT }).map((_, i) => {
     const selected = !!selection && i >= selection.sr && i <= selection.er;
@@ -21,10 +18,7 @@ export default function RowHeader({
       <div
         key={i}
         className={selected ? `${styles.rowHeader} selected` : styles.rowHeader}
-        style={{
-          width: `${rowHeaderWidth - 1}px`, // 왜 인지 모르겠지만 1 px 오차가 남
-          height: `${cellHeight - 1}px`,
-        }}
+        style={{ height: rowHeights[i] - 1, width: rowHeaderWidth - 1 }}
         role="button"
         tabIndex={0}
         onMouseDown={(e) => {
