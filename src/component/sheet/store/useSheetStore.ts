@@ -99,6 +99,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
   rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
 
+  // 시트가 처음 렌더될 때 columnWidths·rowHeights 배열을 초기값으로 채워주는 액션
   initLayout: (cw, rh) => {
     set({
       columnWidths: Array.from({ length: COLUMN_COUNT }, () => cw),
@@ -107,37 +108,56 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   // Resize
+  // 현재 리사이징 중인지 여부를 담는 상태
+  // 리사이즈 시작 전엔 null, 드래그 중엔 { type, index, startClient, startSize } 형태로 값이 들어감.
   resizing: null,
 
+  // 열 리사이즈 시작 시 실행
   startResizeCol: (index, clientX) => {
+    // 현재 열의 초기 폭(w)을 가져오고,
     const w = get().columnWidths[index];
+
+    // resizing 상태에 "col", 열 인덱스, 드래그 시작 좌표(clientX), 시작 폭 저장.
     set({
       resizing: { type: "col", index, startClient: clientX, startSize: w },
     });
   },
+
+  // 행 리사이즈 시작 시 실행
   startResizeRow: (index, clientY) => {
+    // 현재 행의 초기 높이(h)를 가져오고,
     const h = get().rowHeights[index];
+
+    // resizing 상태에 "row", 행 인덱스, 시작 좌표(clientY), 시작 높이 저장.
     set({
       resizing: { type: "row", index, startClient: clientY, startSize: h },
     });
   },
+
+  // 마우스를 움직일 때마다 실행.
   updateResize: (clientXY) => {
     const rs = get().resizing;
     if (!rs) return;
+
+    // delta = 마우스 이동거리 계산
     const delta = clientXY - rs.startClient;
 
+    // rs.type이 col일때
     if (rs.type === "col") {
       const next = Math.max(COL_MIN, Math.min(COL_MAX, rs.startSize + delta));
-      const arr = get().columnWidths.slice();
+      const arr = get().columnWidths.slice(); // slice로 배열 복사, 불변성 유지
       arr[rs.index] = next;
       set({ columnWidths: arr });
-    } else {
+
+      // rs.type이 row일때
+    } else if (rs.type === "row") {
       const next = Math.max(ROW_MIN, Math.min(ROW_MAX, rs.startSize + delta));
-      const arr = get().rowHeights.slice();
+      const arr = get().rowHeights.slice(); // slice로 배열 복사, 불변성 유지
       arr[rs.index] = next;
       set({ rowHeights: arr });
     }
   },
+
   endResize: () => set({ resizing: null }),
 
   // Focus

@@ -20,7 +20,7 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
 
   // 전역 mousemove / mouseup 바인딩
   useEffect(() => {
-    if (!resizing || resizing.type !== "row") return;
+    if (!resizing || resizing.type !== "row") return; // 행 리사이즈 중일 때만 이 효과 실행.
     const onMove = (e: MouseEvent) => {
       e.preventDefault();
       updateResize(e.clientY);
@@ -28,6 +28,9 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
     const onUp = () => {
       endResize();
       document.body.style.cursor = "";
+
+      // 전역(window)에 이벤트를 걸어두면
+      // 마우스가 헤더 밖으로 나가도 드래그가 계속 인식
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
