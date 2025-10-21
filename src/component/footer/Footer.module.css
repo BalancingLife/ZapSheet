@@ -1,3 +1,28 @@
 .container {
-  background-color: thistle;
+  display: flex;
+  align-items: center;
+  padding-left: 40px;
+  background-color: white;
+}
+
+.plus {
+  padding: 7px;
+  border-radius: 25%;
+  margin-right: 5px;
+}
+
+.plus:hover {
+  background-color: rgb(231, 231, 231);
+  cursor: pointer;
+}
+
+.hamburger {
+  padding: 7px;
+  border-radius: 25%;
+  margin-right: 15px;
+}
+
+.hamburger:hover {
+  background-color: rgb(231, 231, 231);
+  cursor: pointer;
 }

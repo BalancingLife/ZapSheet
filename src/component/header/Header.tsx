@@ -5,7 +5,7 @@ export default function Header() {
     <div className={styles.container}>
       <div className={styles.headerContainer}>
         <div className={styles.logo}>
-          <img width="40px" src="./vite.svg" alt="Zap Sheet Logo" />
+          <img width="40px" src="./images/vite.svg" alt="Zap Sheet Logo" />
         </div>
         <div className={styles.fileName}>Zap Sheet</div>
       </div>

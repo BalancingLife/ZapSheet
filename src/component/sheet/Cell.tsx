@@ -1,6 +1,5 @@
 import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";
-import { getColName } from "@/utils/getColName";
 import { useSheetStore } from "./store/useSheetStore";
 
 type CellProps = {
@@ -162,7 +161,7 @@ function Cell({ row, col }: CellProps) {
         }
       }}
     >
-      {display || `${row + 1},${getColName(col)}`}
+      {display}
     </div>
   );
 }
