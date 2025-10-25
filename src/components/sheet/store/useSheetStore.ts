@@ -72,6 +72,7 @@ type DataSlice = {
   setValue: (r: number, c: number, v: string) => void;
   loadCellData: () => Promise<void>;
   clearData: () => void;
+  clearSelectionCells: () => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -345,4 +346,39 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     console.log("데이터 불러오기 완료:", obj);
   },
   clearData: () => set({ data: {} }),
+
+  clearSelectionCells: async () => {
+    const sel = get().selection;
+    if (!sel) return;
+
+    // 1) 로컬 상태 변경
+    const draft = { ...get().data };
+    const targets: Array<{ r: number; c: number }> = [];
+    for (let r = sel.sr; r <= sel.er; r++) {
+      for (let c = sel.sc; c <= sel.ec; c++) {
+        draft[keyOf(r, c)] = ""; // 화면상 빈 칸
+        targets.push({ r, c });
+      }
+    }
+    set({ data: draft });
+
+    // 2) DB : 해당 좌표 행 삭제
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+    if (userErr || !user) {
+      console.error("사용자 정보 없음", userErr);
+      return;
+    }
+    // row/col 조건들을 or로 묶어서 한 번에 삭제
+    const orClauses = targets.map(({ r, c }) => `and(row.eq.${r},col.eq.${c})`);
+    const { error } = await supabase
+      .from("cells")
+      .delete()
+      .eq("user_id", user.id) // RLS 보조 필터
+      .or(orClauses.join(","));
+
+    if (error) console.error("❌ clearSelectionCells 삭제 실패:", error);
+  },
 }));
