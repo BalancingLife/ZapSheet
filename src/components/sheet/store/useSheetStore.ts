@@ -300,16 +300,24 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }));
     clearSelection(); // selection 영역 초기화
 
-    // 2. Supabase에 반영
-    try {
-      const { error } = await supabase
-        .from("cells")
-        .upsert([{ row, col, value }]);
-      if (error) console.error("Supabase 저장 실패:", error);
-      else console.log("저장 완료 : (${row}, ${col}) -> ${value}");
-    } catch (e) {
-      console.error("Supabase 요청 중 오류:", e);
+    // 2) 현재 로그인 유저 id 확보
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+    if (userErr || !user) {
+      console.error("사용자 정보 없음", userErr);
+      return;
     }
+
+    // 3. Supabase에 반영
+    const { error } = await supabase.from("cells").upsert(
+      [{ row, col, value, user_id: user.id }],
+      { onConflict: "row,col,user_id" } // 수정 가능하게 한 코드
+    );
+
+    if (error) console.error(" Supabase 저장 실패:", error);
+    else console.log(`저장됨: (${row}, ${col}) → ${value}`);
   },
 
   // Data
