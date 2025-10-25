@@ -71,6 +71,7 @@ type DataSlice = {
   getValue: (r: number, c: number) => string;
   setValue: (r: number, c: number, v: string) => void;
   loadCellData: () => Promise<void>;
+  clearData: () => void;
 };
 
 type SheetState = LayoutSlice &
@@ -335,4 +336,5 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ data: obj });
     console.log("데이터 불러오기 완료:", obj);
   },
+  clearData: () => set({ data: {} }),
 }));
