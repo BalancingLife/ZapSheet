@@ -1,6 +1,6 @@
-import Header from "@/component/header/Header";
-import Sheet from "@/component/sheet/Sheet";
-import Footer from "@/component/footer/Footer";
+import Header from "@/components/header/Header";
+import Sheet from "@/components/sheet/Sheet";
+import Footer from "@/components/footer/Footer";
 import styles from "./Home.module.css";
 
 export default function Home() {
