@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { supabase } from "@/lib/supabaseClient";
+
 import {
   ROW_COUNT,
   COLUMN_COUNT,
@@ -68,6 +70,7 @@ type DataSlice = {
   data: Record<string, string>; // key = `${row}:${col}`
   getValue: (r: number, c: number) => string;
   setValue: (r: number, c: number, v: string) => void;
+  loadCellData: () => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -283,17 +286,29 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   startEdit: (pos) => set({ editing: pos }),
   cancelEdit: () => set({ editing: null }),
 
-  commitEdit: (value) => {
+  commitEdit: async (value) => {
     const { editing, clearSelection } = get();
     if (!editing) return;
     const { row, col } = editing;
 
+    // 1. 로컬 상태 업데이트
     set((s) => ({
       data: { ...s.data, [keyOf(row, col)]: value },
       editing: null,
       focus: { row, col },
     }));
     clearSelection(); // selection 영역 초기화
+
+    // 2. Supabase에 반영
+    try {
+      const { error } = await supabase
+        .from("cells")
+        .upsert([{ row, col, value }]);
+      if (error) console.error("Supabase 저장 실패:", error);
+      else console.log("저장 완료 : (${row}, ${col}) -> ${value}");
+    } catch (e) {
+      console.error("Supabase 요청 중 오류:", e);
+    }
   },
 
   // Data
@@ -301,4 +316,23 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   getValue: (r, c) => get().data[keyOf(r, c)] ?? "",
   setValue: (r, c, v) =>
     set((s) => ({ data: { ...s.data, [keyOf(r, c)]: v } })),
+
+  // Supabase에서 data 불러오기
+  loadCellData: async () => {
+    const { data, error } = await supabase.from("cells").select("*");
+    if (error) {
+      console.error("데이터 불러오기 실패", error);
+      return;
+    }
+
+    // Supabase의 각 행(row,col,value) 을  key: `${row}:${col}` 형태로 변환
+    const obj: Record<string, string> = {};
+    for (const cell of data) {
+      obj[`${cell.row}:${cell.col}`] = cell.value;
+    }
+
+    // Zustand 상태에 반영
+    set({ data: obj });
+    console.log("데이터 불러오기 완료:", obj);
+  },
 }));

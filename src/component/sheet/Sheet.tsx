@@ -5,9 +5,9 @@ import ColHeader from "./ColHeader";
 import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 import { useSheetStore } from "./store/useSheetStore";
-import { supabase } from "@/lib/supabaseClient";
 
 export default function Sheet() {
+  const loadCellData = useSheetStore((s) => s.loadCellData);
   const [cellWidth] = useState(100);
   const [cellHeight] = useState(25);
   const [rowHeaderWidth] = useState(48);
@@ -17,6 +17,10 @@ export default function Sheet() {
   useEffect(() => {
     initLayout(cellWidth, cellHeight);
   }, [cellWidth, cellHeight, initLayout]);
+
+  useEffect(() => {
+    loadCellData();
+  }, [loadCellData]);
 
   return (
     <div className={styles.container}>
