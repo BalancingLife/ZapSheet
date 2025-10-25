@@ -5,6 +5,7 @@ import ColHeader from "./ColHeader";
 import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 import { useSheetStore } from "./store/useSheetStore";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function Sheet() {
   const [cellWidth] = useState(100);
