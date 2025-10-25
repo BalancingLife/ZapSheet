@@ -5,14 +5,40 @@
   background-color: #fafbfd;
   padding: 20px;
 }
-
-.headerContainer {
+.rowContainer {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.left {
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin-bottom: 10px;
+}
+.right {
+  display: flex;
+}
+.logOutBtn {
+  background-color: #e8f3ff; /* 밝은 하늘색 톤 */
+  border: 1px solid #a9b6c3; /* 회색보다 부드러운 톤 */
+  border-radius: 20px;
+  padding: 8px 16px;
+  color: #1a1a1a;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
+.logOutBtn:hover {
+  background-color: #d6e8ff;
+  border-color: #7d8da0;
+}
+
+.logOutBtn:active {
+  background-color: #c5dbff;
+  transform: scale(0.98);
+}
 .logo {
   padding-right: 5px;
 }

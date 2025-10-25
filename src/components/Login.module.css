@@ -1,0 +1,162 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f7f9fc;
+  padding: 24px;
+}
+
+.wrapper {
+  width: 100%;
+  max-width: 420px;
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-align: center;
+  margin-bottom: 16px;
+  color: #0f172a; /* slate-900 */
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #eaeef3;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(2, 8, 23, 0.06);
+}
+
+.heading {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  color: #111827; /* gray-900 */
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12px;
+  color: #4b5563; /* gray-600 */
+}
+
+.inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db; /* gray-300 */
+  border-radius: 10px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: #2563eb; /* blue-600 */
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.pwToggle {
+  padding: 0 10px;
+  height: 36px;
+  border: 1px solid #e5e7eb; /* gray-200 */
+  border-radius: 10px;
+  background: #f9fafb;
+  cursor: pointer;
+}
+
+.helper {
+  font-size: 12px;
+  color: #ef4444; /* red-500 */
+}
+
+.ok {
+  color: #059669; /* emerald-600 */
+  font-size: 13px;
+}
+
+.error {
+  color: #dc2626; /* red-600 */
+  font-size: 13px;
+}
+
+.actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #1f2937; /* gray-800 */
+  background: #1f2937;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.03s ease;
+}
+
+.submitBtn:disabled {
+  background: #9ca3af; /* gray-400 */
+  border-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.submitBtn:active {
+  transform: scale(0.99);
+}
+
+.secondaryRow {
+  display: flex;
+  gap: 8px;
+}
+
+.secondaryBtn {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #c7d2fe; /* indigo-200 */
+  background: #eef2ff; /* indigo-50 */
+  color: #1e40af; /* indigo-800 */
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.03s ease;
+}
+
+.secondaryBtn:hover {
+  background: #e0e7ff; /* indigo-100 */
+}
+
+.secondaryBtn:active {
+  transform: scale(0.99);
+}
+
+.switchRow {
+  margin-top: 4px;
+  display: flex;
+  justify-content: center;
+}
+
+.switchBtn {
+  font-size: 12px;
+  color: #374151; /* gray-700 */
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
