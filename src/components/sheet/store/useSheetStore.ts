@@ -17,14 +17,6 @@ export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
 
-/** 방향별 (행/열) 변화량 매핑 상수*/
-const DIR: Record<Dir, { dr: number; dc: number }> = {
-  up: { dr: -1, dc: 0 },
-  down: { dr: 1, dc: 0 },
-  left: { dr: 0, dc: -1 },
-  right: { dr: 0, dc: 1 },
-};
-
 // --------- Slice ---------
 
 // UI 상태
@@ -62,8 +54,8 @@ type FocusSlice = {
   focus: Pos | null;
   setFocus: (pos: Pos) => void;
   clearFocus: () => void;
-  move: (dir: "up" | "down" | "left" | "right") => void;
-  moveCtrlEdge: (dir: "up" | "down" | "left" | "right") => void;
+  move: (dir: Dir) => void;
+  moveCtrlEdge: (dir: Dir) => void;
 };
 
 // 드래깅(Selecting)을 위한 Slice
@@ -83,8 +75,8 @@ type SelectionSlice = {
   clearSelection: () => void;
 
   isSelected: (r: number, c: number) => boolean;
-  extendSelectionByArrow: (dir: "up" | "down" | "left" | "right") => void; // ADD
-  extendSelectionByCtrlEdge: (dir: "up" | "down" | "left" | "right") => void; // ADD
+  extendSelectionByArrow: (dir: Dir) => void; // ADD
+  extendSelectionByCtrlEdge: (dir: Dir) => void; // ADD
 };
 
 type EditSlice = {
@@ -111,27 +103,65 @@ type SheetState = LayoutSlice &
   EditSlice &
   DataSlice;
 
-// ==============================
-// --------- helpers ------------
-// ==============================
+// =====================
+// Helpers (공통 유틸)
+// =====================
 
+// 현재 로그인 유저 id 추출
+async function getCurrentUserId(): Promise<string | null> {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) return null;
+  return user.id;
+}
+
+// 유저 확인을 래핑 (반복 제거)
+async function withUserId<T>(
+  fn: (uid: string) => Promise<T>
+): Promise<T | void> {
+  const uid = await getCurrentUserId();
+  if (!uid) {
+    console.error("사용자 정보 없음");
+    return;
+  }
+  return fn(uid);
+}
+
+// 좌표 키
 const keyOf = (r: number, c: number) => `${r}:${c}`;
 
 // 지정된 범위를 벗어나지 않게 보정
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
-
 // 행/열 인덱스를 시트 경계 안으로 클램프
 const clampRow = (r: number) => clamp(r, 0, ROW_COUNT - 1);
 const clampCol = (c: number) => clamp(c, 0, COLUMN_COUNT - 1);
 
-// 주어진 방향으로 '한 칸' 이동 (경계 자동 클램프)
+function normRect(a: Pos, b: Pos): Rect {
+  const sr = Math.min(a.row, b.row);
+  const er = Math.max(a.row, b.row);
+  const sc = Math.min(a.col, b.col);
+  const ec = Math.max(a.col, b.col);
+  return { sr, sc, er, ec };
+}
+
+// 방향 델타 상수 (상수 컨벤션: 대문자))
+const DIR: Record<Dir, { dr: number; dc: number }> = {
+  up: { dr: -1, dc: 0 },
+  down: { dr: 1, dc: 0 },
+  left: { dr: 0, dc: -1 },
+  right: { dr: 0, dc: 1 },
+};
+
+// 한 칸 이동
 const step1 = (p: Pos, dir: Dir): Pos => {
   const { dr, dc } = DIR[dir];
   return { row: clampRow(p.row + dr), col: clampCol(p.col + dc) };
 };
 
-// 값 유무 무시, '경계로' 점프 (행/열 끝으로 이동)
+// 경계로 점프
 const toEdge = (p: Pos, dir: Dir): Pos => {
   if (dir === "up") return { row: 0, col: p.col };
   if (dir === "down") return { row: ROW_COUNT - 1, col: p.col };
@@ -140,12 +170,82 @@ const toEdge = (p: Pos, dir: Dir): Pos => {
   return { row: p.row, col: COLUMN_COUNT - 1 };
 };
 
-function normRect(a: Pos, b: Pos): Rect {
-  const sr = Math.min(a.row, b.row);
-  const er = Math.max(a.row, b.row);
-  const sc = Math.min(a.col, b.col);
-  const ec = Math.max(a.col, b.col);
-  return { sr, sc, er, ec };
+// 배열 pad/trunc
+const padTo = <T>(arr: T[], len: number, fill: T) =>
+  [...arr, ...Array(Math.max(0, len - arr.length)).fill(fill)].slice(0, len);
+
+// selection → 좌표 목록
+function rectToCells(sel: Rect): Array<Pos> {
+  const out: Pos[] = [];
+  for (let r = sel.sr; r <= sel.er; r++) {
+    for (let c = sel.sc; c <= sel.ec; c++) out.push({ row: r, col: c });
+  }
+  return out;
+}
+
+// 포커스 = 단일 selection 세팅
+function setFocusAsSingleSelection(
+  set: (p: Partial<SheetState>) => void,
+  pos: Pos
+) {
+  set({
+    focus: pos,
+    selection: { sr: pos.row, sc: pos.col, er: pos.row, ec: pos.col },
+    isSelecting: false,
+    anchor: null,
+    head: null,
+  });
+}
+
+// Shift 확장 시작 시 anchor/head 초기화
+function prepareAnchorHead(args: {
+  focus: Pos | null;
+  anchor: Pos | null;
+  head: Pos | null;
+  selection: Rect | null;
+}): { a: Pos; h: Pos } | null {
+  const { focus, anchor, head, selection } = args;
+  if (!focus) return null;
+
+  const a = anchor ?? { row: focus.row, col: focus.col };
+  if (head) return { a, h: { ...head } };
+
+  if (selection) {
+    const s = selection;
+    const tl: Pos = { row: s.sr, col: s.sc };
+    const br: Pos = { row: s.er, col: s.ec };
+    if (a.row === s.sr && a.col === s.sc) return { a, h: br };
+    if (a.row === s.er && a.col === s.ec) return { a, h: tl };
+    if (a.row === s.sr && a.col === s.ec)
+      return { a, h: { row: s.er, col: s.sc } };
+    return { a, h: { row: s.sr, col: s.ec } };
+  }
+  return { a, h: { row: focus.row, col: focus.col } };
+}
+
+// selection 갱신 payload
+const updateSelectionFrom = (a: Pos, h: Pos) => ({
+  anchor: a,
+  head: h,
+  selection: normRect(a, h),
+  isSelecting: false,
+});
+
+// 공통 확장 실행기 (전략: 한 칸/경계)
+function extendSelectionWith(
+  get: () => SheetState,
+  set: (partial: Partial<SheetState>) => void,
+  dir: Dir,
+  strategy: "step" | "edge"
+) {
+  const { focus, anchor, head, selection } = get();
+  const init = prepareAnchorHead({ focus, anchor, head, selection });
+  if (!init) return;
+  const { a } = init;
+  let { h } = init;
+
+  h = strategy === "step" ? step1(h, dir) : toEdge(h, dir);
+  set(updateSelectionFrom(a, h));
 }
 
 let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -159,20 +259,6 @@ let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 function debounceLayoutSave(fn: () => void, ms = 500) {
   if (__layoutSaveTimer) clearTimeout(__layoutSaveTimer);
   __layoutSaveTimer = setTimeout(fn, ms);
-}
-
-// ==============================
-// --------- services -----------
-// ==============================
-
-// 현재 로그인 유저 id 추출
-async function getCurrentUserId(): Promise<string | null> {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  return user.id;
 }
 
 // ==============================
@@ -195,88 +281,58 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   //Layout Persist
   sheetId: "default",
   setSheetId: (id) => set({ sheetId: id }),
+  isLayoutReady: false,
 
   saveLayout: async () => {
-    const user_id = await getCurrentUserId();
-    if (!user_id) {
-      console.error("사용자 정보 없음");
-      return;
-    }
-    const { columnWidths, rowHeights, sheetId } = get();
+    await withUserId(async (uid) => {
+      const { columnWidths, rowHeights, sheetId } = get();
 
-    // 숫자 배열 보장(혹시 모를 타입 깨짐 방지)
-    const cw = Array.isArray(columnWidths) ? columnWidths.map(Number) : [];
-    const rh = Array.isArray(rowHeights) ? rowHeights.map(Number) : [];
-
-    const payload = {
-      user_id: user_id,
-      sheet_id: sheetId,
-      column_widths: cw,
-      row_heights: rh,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await supabase
-      .from("sheet_layouts")
-      .upsert(payload, { onConflict: "user_id,sheet_id" });
-
-    if (error) console.error("레이아웃 저장 실패:", error);
-    // else console.log("레이아웃 저장 완료");
+      const payload = {
+        user_id: uid,
+        sheet_id: sheetId,
+        column_widths: columnWidths.map(Number),
+        row_heights: rowHeights.map(Number),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from("sheet_layouts")
+        .upsert(payload, { onConflict: "user_id,sheet_id" });
+      if (error) console.error("레이아웃 저장 실패:", error);
+    });
   },
 
   loadLayout: async () => {
     // 0) 아직 준비 안됨
     set({ isLayoutReady: false });
+    await withUserId(async (uid) => {
+      // 2) Supabase에서 레이아웃 조회
+      const { data, error } = await supabase
+        .from("sheet_layouts")
+        .select("column_widths,row_heights")
+        .eq("user_id", uid)
+        .eq("sheet_id", get().sheetId)
+        .maybeSingle(); // 결과가 0개면 data: null, error: null. 1개면 그 행 반환
+      if (error) {
+        console.error("레이아웃 불러오기 실패:", error);
+      }
 
-    // 1) 현재 로그인 유저 확인
-    const user_id = await getCurrentUserId();
-    if (!user_id) {
-      console.error("사용자 정보 없음");
-      set({ isLayoutReady: true }); // 최소한 렌더는 진행되게
-      return;
-    }
-
-    // 2) Supabase에서 레이아웃 조회
-    const { data, error } = await supabase
-      .from("sheet_layouts")
-      .select("column_widths,row_heights")
-      .eq("user_id", user_id)
-      .eq("sheet_id", get().sheetId)
-      .maybeSingle(); // 결과가 0개면 data: null, error: null. 1개면 그 행 반환
-
-    if (error) {
-      console.error("레이아웃 불러오기 실패:", error);
-    }
-    if (data) {
-      // DB에 있으면 적용
-      const cwRaw = Array.isArray(data.column_widths) ? data.column_widths : [];
-      const rhRaw = Array.isArray(data.row_heights) ? data.row_heights : [];
-
-      const fixedCW = [
-        ...cwRaw,
-        ...Array(Math.max(0, COLUMN_COUNT - cwRaw.length)).fill(100),
-      ].slice(0, COLUMN_COUNT);
-      const fixedRH = [
-        ...rhRaw,
-        ...Array(Math.max(0, ROW_COUNT - rhRaw.length)).fill(25),
-      ].slice(0, ROW_COUNT);
-
-      set({ columnWidths: fixedCW, rowHeights: fixedRH, isLayoutReady: true });
-      return;
-    }
-
-    // 데이터가 없으면: 이 자리에서 기본값을 바로 세팅(초기 깜빡임 방지)
-    set({
-      columnWidths: Array.from(
-        { length: COLUMN_COUNT },
-        () => DEFAULT_COL_WIDTH
-      ),
-      rowHeights: Array.from({ length: ROW_COUNT }, () => DEFAULT_ROW_HEIGHT),
-      isLayoutReady: true,
+      if (data) {
+        const cw = Array.isArray(data.column_widths) ? data.column_widths : [];
+        const rh = Array.isArray(data.row_heights) ? data.row_heights : [];
+        set({
+          columnWidths: padTo(cw, COLUMN_COUNT, 100),
+          rowHeights: padTo(rh, ROW_COUNT, 25),
+          isLayoutReady: true,
+        });
+      } else {
+        set({
+          columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
+          rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
+          isLayoutReady: true,
+        });
+      }
     });
   },
-
-  isLayoutReady: false,
 
   // Resize
   // 현재 리사이징 중인지 여부를 담는 상태
@@ -334,7 +390,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
     debounceLayoutSave(() => {
       const { saveLayout } = get();
-      saveLayout();
+      saveLayout().catch(console.error);
     }, 500);
   },
 
@@ -342,35 +398,19 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   focus: null, // pos(r,c)를 받음
   setFocus: (pos) => set({ focus: pos }),
   clearFocus: () => set({ focus: null }),
+
   move: (dir) => {
     const focus = get().focus;
     if (!focus) return;
 
-    // 한 칸 이동 로직을 step1에 위임
-    const next = step1(focus, dir);
-
-    set({
-      focus: next,
-      selection: { sr: next.row, sc: next.col, er: next.row, ec: next.col },
-      isSelecting: false,
-      head: null,
-      anchor: null,
-    });
+    setFocusAsSingleSelection(set, step1(focus, dir));
   },
 
   moveCtrlEdge: (dir) => {
     const focus = get().focus;
     if (!focus) return;
 
-    const next = toEdge(focus, dir);
-
-    set({
-      focus: next,
-      selection: { sr: next.row, sc: next.col, er: next.row, ec: next.col }, // 단일 selection
-      anchor: null,
-      head: null,
-      isSelecting: false,
-    });
+    setFocusAsSingleSelection(set, toEdge(focus, dir));
   },
 
   // Selection
@@ -404,7 +444,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // Column 전체 선택
   selectColumn: (col, extend = false) => {
     const { focus, setFocus } = get();
-    const c = clamp(col, 0, COLUMN_COUNT - 1);
+    const c = clampCol(col);
 
     if (extend && focus) {
       //  Shift: focus.col ↔ 클릭 col 범위 (포커스 유지)
@@ -430,7 +470,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // Row 전체 선택
   selectRow: (row, extend = false) => {
     const { focus, setFocus } = get();
-    const r = clamp(row, 0, ROW_COUNT - 1);
+    const r = clampRow(row);
 
     if (extend && focus) {
       // Shift: focus.row ↔ 클릭 row 범위 (포커스 유지)
@@ -470,7 +510,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (!sel) return false;
 
     const count = (sel.er - sel.sr + 1) * (sel.ec - sel.sc + 1); // count = 행 개수 * 열 개수 = 선택된 셀의 총 개수, 이 로직을 통해 선택된 셀들이 2개 이상일 때만 isSelected 적용
-    if (count < 2) return false;
+    if (count < 2) return false; // 단일 셀은 하이라이트 X
 
     return r >= sel.sr && r <= sel.er && c >= sel.sc && c <= sel.ec;
   },
@@ -479,85 +519,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ selection: null, isSelecting: false, anchor: null }),
 
   extendSelectionByArrow: (dir) => {
-    const { focus, anchor, head, selection } = get();
-    if (!focus) return;
-
-    // Shift 확장을 처음 시작하면 anchor를 현재 focus로 고정
-    const a = anchor ?? { row: focus.row, col: focus.col };
-
-    // head: 확장의 끝점(가변점)
-    let h: Pos;
-    if (head) {
-      h = { ...head }; // 있다면 계속 이어서 씀
-    } else if (selection) {
-      const sel = selection;
-      const topLeft: Pos = { row: sel.sr, col: sel.sc };
-      const bottomRight: Pos = { row: sel.er, col: sel.ec };
-      // anchor가 좌상단인지 우하단인지에 따라 반대 꼭짓점 선택
-      if (a.row === sel.sr && a.col === sel.sc) h = bottomRight;
-      else if (a.row === sel.er && a.col === sel.ec) h = topLeft;
-      else if (a.row === sel.sr && a.col === sel.ec)
-        h = { row: sel.er, col: sel.sc };
-      /* a.row === sel.er && a.col === sel.sc */ else
-        h = { row: sel.sr, col: sel.ec };
-    } else {
-      h = { row: focus.row, col: focus.col };
-    }
-    // head를 한 칸 이동
-    if (dir === "up") h.row = clamp(h.row - 1, 0, ROW_COUNT - 1);
-    if (dir === "down") h.row = clamp(h.row + 1, 0, ROW_COUNT - 1);
-    if (dir === "left") h.col = clamp(h.col - 1, 0, COLUMN_COUNT - 1);
-    if (dir === "right") h.col = clamp(h.col + 1, 0, COLUMN_COUNT - 1);
-
-    const nextSel = normRect(a, h);
-
-    set({
-      anchor: a,
-      head: h, // ← head만 갱신
-      selection: nextSel,
-      isSelecting: false,
-      // focus는 건드리지 않음
-    });
+    extendSelectionWith(get, set, dir, "step");
   },
 
   extendSelectionByCtrlEdge: (dir) => {
-    const { focus, anchor, head, selection } = get();
-    if (!focus) return;
-
-    // anchor 없으면 focus로 고정
-    const a = anchor ?? { row: focus.row, col: focus.col };
-
-    // 현재 head 기준 잡기
-    let h: Pos;
-    if (head) {
-      h = { ...head };
-    } else if (selection) {
-      const sel = selection;
-      const tl: Pos = { row: sel.sr, col: sel.sc };
-      const br: Pos = { row: sel.er, col: sel.ec };
-      if (a.row === sel.sr && a.col === sel.sc) h = br;
-      else if (a.row === sel.er && a.col === sel.ec) h = tl;
-      else if (a.row === sel.sr && a.col === sel.ec)
-        h = { row: sel.er, col: sel.sc };
-      else h = { row: sel.sr, col: sel.ec };
-    } else {
-      h = { row: focus.row, col: focus.col };
-    }
-
-    // 경계로 점프 (값 무시)
-    if (dir === "up") h.row = 0;
-    if (dir === "down") h.row = ROW_COUNT - 1;
-    if (dir === "left") h.col = 0;
-    if (dir === "right") h.col = COLUMN_COUNT - 1;
-
-    const nextSel = normRect(a, h);
-
-    set({
-      anchor: a,
-      head: h,
-      selection: nextSel,
-      isSelecting: false,
-    });
+    extendSelectionWith(get, set, dir, "edge");
   },
 
   // Edit
@@ -570,7 +536,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (!editing) return;
     const { row, col } = editing;
 
-    // 1. 로컬 상태 업데이트
+    // 로컬 상태 업데이트
     set((s) => ({
       data: { ...s.data, [keyOf(row, col)]: value },
       editing: null,
@@ -578,24 +544,18 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }));
     clearSelection(); // selection 영역 초기화
 
-    // 2) 현재 로그인 유저 id 확보
-    const user_id = await getCurrentUserId();
-    if (!user_id) {
-      console.error("사용자 없음");
-      return;
-    }
-
-    // 3. Supabase에 반영
-    const { error } = await supabase.from("cells").upsert(
-      [{ row, col, value, user_id: user_id }],
-      { onConflict: "row,col,user_id" } // 수정 가능하게 한 코드
-    );
-
-    if (error) console.error(" Supabase 저장 실패:", error);
-    else console.log(`저장됨: (${row}, ${col}) → ${value}`);
+    // DB 반영
+    await withUserId(async (uid) => {
+      const { error } = await supabase.from("cells").upsert(
+        [{ row, col, value, user_id: uid }],
+        { onConflict: "row,col,user_id" } // 수정 가능하게 한 코드
+      );
+      if (error) console.error(" Supabase 저장 실패:", error);
+      else console.log(`저장됨: (${row}, ${col}) → ${value}`);
+    });
   },
 
-  // Data
+  // ---- Data ----
   data: {},
   getValue: (r, c) => get().data[keyOf(r, c)] ?? "",
   setValue: (r, c, v) =>
@@ -614,10 +574,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     for (const cell of data) {
       obj[`${cell.row}:${cell.col}`] = cell.value;
     }
-
     // Zustand 상태에 반영
     set({ data: obj });
-    console.log("데이터 불러오기 완료:", obj);
   },
   clearData: () => set({ data: {} }),
 
@@ -627,29 +585,21 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     // 1) 로컬 상태 변경
     const draft = { ...get().data };
-    const targets: Array<{ r: number; c: number }> = [];
-    for (let r = sel.sr; r <= sel.er; r++) {
-      for (let c = sel.sc; c <= sel.ec; c++) {
-        draft[keyOf(r, c)] = ""; // 화면상 빈 칸
-        targets.push({ r, c });
-      }
-    }
+    const targets = rectToCells(sel);
+    for (const { row, col } of targets) draft[keyOf(row, col)] = "";
     set({ data: draft });
 
-    // 2) DB : 해당 좌표 행 삭제
-    const user_id = await getCurrentUserId();
-    if (!user_id) {
-      console.error("사용자 없음");
-      return;
-    }
-    // row/col 조건들을 or로 묶어서 한 번에 삭제
-    const orClauses = targets.map(({ r, c }) => `and(row.eq.${r},col.eq.${c})`);
-    const { error } = await supabase
-      .from("cells")
-      .delete()
-      .eq("user_id", user_id) // RLS 보조 필터
-      .or(orClauses.join(","));
-
-    if (error) console.error("clearSelectionCells 삭제 실패:", error);
+    // DB
+    await withUserId(async (uid) => {
+      const orClauses = targets.map(
+        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+      );
+      const { error } = await supabase
+        .from("cells")
+        .delete()
+        .eq("user_id", uid)
+        .or(orClauses.join(","));
+      if (error) console.error("clearSelectionCells 삭제 실패:", error);
+    });
   },
 }));
