@@ -38,6 +38,7 @@ type ResizeSlice = {
 type FocusSlice = {
   focus: Pos | null;
   setFocus: (pos: Pos) => void;
+  clearFocus: () => void;
   move: (dir: "up" | "down" | "left" | "right") => void;
 };
 
@@ -168,6 +169,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // Focus
   focus: null, // pos(r,c)를 받음
   setFocus: (pos) => set({ focus: pos }),
+  clearFocus: () => set({ focus: null }),
   move: (dir) => {
     const { focus, clearSelection } = get();
     if (!focus) return;
