@@ -12,19 +12,20 @@ export default function Sheet() {
   const selection = useSheetStore((s) => s.selection);
   const clearSelectionCells = useSheetStore((s) => s.clearSelectionCells);
 
-  const [cellWidth] = useState(100);
-  const [cellHeight] = useState(25);
   const [rowHeaderWidth] = useState(48);
   const [colHeaderHeight] = useState(28);
 
-  const initLayout = useSheetStore((s) => s.initLayout);
-  useEffect(() => {
-    initLayout(cellWidth, cellHeight);
-  }, [cellWidth, cellHeight, initLayout]);
+  const setSheetId = useSheetStore((s) => s.setSheetId);
+  const loadLayout = useSheetStore((s) => s.loadLayout);
+  const isLayoutReady = useSheetStore((s) => s.isLayoutReady);
 
   useEffect(() => {
-    loadCellData();
-  }, [loadCellData]);
+    setSheetId("default");
+    loadLayout().then(() => {
+      // 레이아웃 준비된 뒤에 셀 데이터 로드
+      loadCellData();
+    });
+  }, [setSheetId, loadLayout, loadCellData]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -38,10 +39,14 @@ export default function Sheet() {
     };
 
     // window 에게 사용자가 키보드를 누를때 마다 onKey 함수를 호출하라는 뜻.
-
     window.addEventListener("keydown", onKey); // 컴포넌트가 화면에 나타날 떄 keydown 이벤트를 등록
     return () => window.removeEventListener("keydown", onKey); // 화면에서 사라질때 등록을 해제 하는 구조
   }, [editing, selection, clearSelectionCells]);
+
+  // 레이아웃 준비 전엔 렌더 보류
+  if (!isLayoutReady) {
+    return null;
+  }
 
   return (
     <div className={styles.container}>

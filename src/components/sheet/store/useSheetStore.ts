@@ -25,7 +25,9 @@ type LayoutSlice = {
 type LayoutPersistSlice = {
   sheetId: string;
   setSheetId: (id: string) => void;
+  saveLayout: () => Promise<void>;
   loadLayout: () => Promise<void>;
+  isLayoutReady: boolean;
 };
 
 type ResizeState = null | {
@@ -94,7 +96,7 @@ type SheetState = LayoutSlice &
 
 // --------- helpers ---------
 
-// 유저 정보 확인
+// 현재 로그인 유저 id 추출
 async function getCurrentUserId(): Promise<string | null> {
   const {
     data: { user },
@@ -118,6 +120,19 @@ function normRect(a: Pos, b: Pos): Rect {
   return { sr, sc, er, ec };
 }
 
+let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
+// 이 변수는 함수가 여러 번 불려도 계속 기억되어야 함
+// const -> 값 재할당 불가
+// let -> 다음 호출 때 새로운 타이머 ID로 덮어 써야 함
+// __ 의 의미 : private / 내부용 이라는 의미. 컨벤션
+
+//“연속 호출이 발생하면 타이머를 계속 밀어서,
+// 마지막 호출 후 ms 밀리초 뒤에만 실행된다.”
+function debounceLayoutSave(fn: () => void, ms = 500) {
+  if (__layoutSaveTimer) clearTimeout(__layoutSaveTimer);
+  __layoutSaveTimer = setTimeout(fn, ms);
+}
+
 // ---------- store ----------
 
 export const useSheetStore = create<SheetState>((set, get) => ({
@@ -136,11 +151,44 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   //Layout Persist
   sheetId: "default",
   setSheetId: (id) => set({ sheetId: id }),
+
+  saveLayout: async () => {
+    const user_id = await getCurrentUserId();
+    if (!user_id) {
+      console.error("사용자 정보 없음");
+      return;
+    }
+    const { columnWidths, rowHeights, sheetId } = get();
+
+    // 숫자 배열 보장(혹시 모를 타입 깨짐 방지)
+    const cw = Array.isArray(columnWidths) ? columnWidths.map(Number) : [];
+    const rh = Array.isArray(rowHeights) ? rowHeights.map(Number) : [];
+
+    const payload = {
+      user_id: user_id,
+      sheet_id: sheetId,
+      column_widths: cw,
+      row_heights: rh,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("sheet_layouts")
+      .upsert(payload, { onConflict: "user_id,sheet_id" });
+
+    if (error) console.error("레이아웃 저장 실패:", error);
+    // else console.log("레이아웃 저장 완료");
+  },
+
   loadLayout: async () => {
+    // 0) 아직 준비 안됨
+    set({ isLayoutReady: false });
+
     // 1) 현재 로그인 유저 확인
     const user_id = await getCurrentUserId();
     if (!user_id) {
-      console.error("사용자 없음");
+      console.error("사용자 정보 없음");
+      set({ isLayoutReady: true }); // 최소한 렌더는 진행되게
       return;
     }
 
@@ -154,29 +202,34 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     if (error) {
       console.error("레이아웃 불러오기 실패:", error);
+    }
+    if (data) {
+      // DB에 있으면 적용
+      const cwRaw = Array.isArray(data.column_widths) ? data.column_widths : [];
+      const rhRaw = Array.isArray(data.row_heights) ? data.row_heights : [];
+
+      const fixedCW = [
+        ...cwRaw,
+        ...Array(Math.max(0, COLUMN_COUNT - cwRaw.length)).fill(100),
+      ].slice(0, COLUMN_COUNT);
+      const fixedRH = [
+        ...rhRaw,
+        ...Array(Math.max(0, ROW_COUNT - rhRaw.length)).fill(25),
+      ].slice(0, ROW_COUNT);
+
+      set({ columnWidths: fixedCW, rowHeights: fixedRH, isLayoutReady: true });
       return;
     }
-    if (!data) {
-      // 없으면 아무 것도 안 함(현재 initLayout 기본값 유지)
-      return;
-    }
 
-    // 3) 길이 보정: DB 배열 길이가 현재 시트 크기와 다르면 pad/trunc
-    const cwRaw = Array.isArray(data.column_widths) ? data.column_widths : [];
-    const rhRaw = Array.isArray(data.row_heights) ? data.row_heights : [];
-
-    const fixedCW = [
-      ...cwRaw,
-      ...Array(Math.max(0, COLUMN_COUNT - cwRaw.length)).fill(100),
-    ].slice(0, COLUMN_COUNT);
-    const fixedRH = [
-      ...rhRaw,
-      ...Array(Math.max(0, ROW_COUNT - rhRaw.length)).fill(25),
-    ].slice(0, ROW_COUNT);
-
-    set({ columnWidths: fixedCW, rowHeights: fixedRH });
+    // 데이터가 없으면: 이 자리에서 기본값을 바로 세팅(초기 깜빡임 방지)
+    set({
+      columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
+      rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
+      isLayoutReady: true,
+    });
   },
 
+  isLayoutReady: false,
   // Resize
   // 현재 리사이징 중인지 여부를 담는 상태
   // 리사이즈 시작 전엔 null, 드래그 중엔 { type, index, startClient, startSize } 형태로 값이 들어감.
@@ -228,7 +281,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }
   },
 
-  endResize: () => set({ resizing: null }),
+  endResize: () => {
+    set({ resizing: null });
+    // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
+    debounceLayoutSave(() => {
+      const { saveLayout } = get();
+      void saveLayout();
+    }, 500);
+  },
 
   // Focus
   focus: null, // pos(r,c)를 받음
