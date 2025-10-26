@@ -140,26 +140,6 @@ function Cell({ row, col }: CellProps) {
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}
       onDoubleClick={() => startEdit({ row, col })}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === "F2") {
-          e.preventDefault();
-          startEdit({ row, col });
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          move("up");
-        } else if (e.key === "ArrowDown") {
-          e.preventDefault();
-          move("down");
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          move("left");
-        } else if (e.key === "ArrowRight") {
-          e.preventDefault();
-          move("right");
-        }
-      }}
     >
       {display}
     </div>
