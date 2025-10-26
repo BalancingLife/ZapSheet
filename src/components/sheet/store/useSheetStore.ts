@@ -14,10 +14,18 @@ import {
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 
+// UI 상태
 type LayoutSlice = {
   columnWidths: number[];
   rowHeights: number[];
   initLayout: (defaultColWidth: number, defaultRowHeight: number) => void;
+};
+
+// Supabase의 레이아웃을 불러오는 Slice, 서버 동기화 로직
+type LayoutPersistSlice = {
+  sheetId: string;
+  setSheetId: (id: string) => void;
+  loadLayout: () => Promise<void>;
 };
 
 type ResizeState = null | {
@@ -77,6 +85,7 @@ type DataSlice = {
 };
 
 type SheetState = LayoutSlice &
+  LayoutPersistSlice &
   ResizeSlice &
   FocusSlice &
   SelectionSlice &
@@ -84,6 +93,17 @@ type SheetState = LayoutSlice &
   DataSlice;
 
 // --------- helpers ---------
+
+// 유저 정보 확인
+async function getCurrentUserId(): Promise<string | null> {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) return null;
+  return user.id;
+}
+
 const keyOf = (r: number, c: number) => `${r}:${c}`;
 
 // 지정된 범위를 벗어나지 않게 보정
@@ -111,6 +131,50 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       columnWidths: Array.from({ length: COLUMN_COUNT }, () => cw),
       rowHeights: Array.from({ length: ROW_COUNT }, () => rh),
     });
+  },
+
+  //Layout Persist
+  sheetId: "default",
+  setSheetId: (id) => set({ sheetId: id }),
+  loadLayout: async () => {
+    // 1) 현재 로그인 유저 확인
+    const user_id = await getCurrentUserId();
+    if (!user_id) {
+      console.error("사용자 없음");
+      return;
+    }
+
+    // 2) Supabase에서 레이아웃 조회
+    const { data, error } = await supabase
+      .from("sheet_layouts")
+      .select("column_widths,row_heights")
+      .eq("user_id", user_id)
+      .eq("sheet_id", get().sheetId)
+      .maybeSingle(); // 결과가 0개면 data: null, error: null. 1개면 그 행 반환
+
+    if (error) {
+      console.error("레이아웃 불러오기 실패:", error);
+      return;
+    }
+    if (!data) {
+      // 없으면 아무 것도 안 함(현재 initLayout 기본값 유지)
+      return;
+    }
+
+    // 3) 길이 보정: DB 배열 길이가 현재 시트 크기와 다르면 pad/trunc
+    const cwRaw = Array.isArray(data.column_widths) ? data.column_widths : [];
+    const rhRaw = Array.isArray(data.row_heights) ? data.row_heights : [];
+
+    const fixedCW = [
+      ...cwRaw,
+      ...Array(Math.max(0, COLUMN_COUNT - cwRaw.length)).fill(100),
+    ].slice(0, COLUMN_COUNT);
+    const fixedRH = [
+      ...rhRaw,
+      ...Array(Math.max(0, ROW_COUNT - rhRaw.length)).fill(25),
+    ].slice(0, ROW_COUNT);
+
+    set({ columnWidths: fixedCW, rowHeights: fixedRH });
   },
 
   // Resize
@@ -304,18 +368,15 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     clearSelection(); // selection 영역 초기화
 
     // 2) 현재 로그인 유저 id 확보
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-    if (userErr || !user) {
-      console.error("사용자 정보 없음", userErr);
+    const user_id = await getCurrentUserId();
+    if (!user_id) {
+      console.error("사용자 없음");
       return;
     }
 
     // 3. Supabase에 반영
     const { error } = await supabase.from("cells").upsert(
-      [{ row, col, value, user_id: user.id }],
+      [{ row, col, value, user_id: user_id }],
       { onConflict: "row,col,user_id" } // 수정 가능하게 한 코드
     );
 
@@ -365,12 +426,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ data: draft });
 
     // 2) DB : 해당 좌표 행 삭제
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-    if (userErr || !user) {
-      console.error("사용자 정보 없음", userErr);
+    const user_id = await getCurrentUserId();
+    if (!user_id) {
+      console.error("사용자 없음");
       return;
     }
     // row/col 조건들을 or로 묶어서 한 번에 삭제
@@ -378,9 +436,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const { error } = await supabase
       .from("cells")
       .delete()
-      .eq("user_id", user.id) // RLS 보조 필터
+      .eq("user_id", user_id) // RLS 보조 필터
       .or(orClauses.join(","));
 
-    if (error) console.error("❌ clearSelectionCells 삭제 실패:", error);
+    if (error) console.error("clearSelectionCells 삭제 실패:", error);
   },
 }));
