@@ -8,11 +8,15 @@ import {
   ROW_MIN,
   COL_MAX,
   COL_MIN,
+  DEFAULT_ROW_HEIGHT,
+  DEFAULT_COL_WIDTH,
 } from "../SheetConstants";
 
 // --------- types ---------
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
+
+// --------- Slice ---------
 
 // UI 상태
 type LayoutSlice = {
@@ -98,17 +102,9 @@ type SheetState = LayoutSlice &
   EditSlice &
   DataSlice;
 
-// --------- helpers ---------
-
-// 현재 로그인 유저 id 추출
-async function getCurrentUserId(): Promise<string | null> {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  return user.id;
-}
+// ==============================
+// --------- helpers ------------
+// ==============================
 
 const keyOf = (r: number, c: number) => `${r}:${c}`;
 
@@ -137,12 +133,26 @@ function debounceLayoutSave(fn: () => void, ms = 500) {
   __layoutSaveTimer = setTimeout(fn, ms);
 }
 
+// ==============================
+// --------- services -----------
+// ==============================
+
+// 현재 로그인 유저 id 추출
+async function getCurrentUserId(): Promise<string | null> {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) return null;
+  return user.id;
+}
+
 // ---------- store ----------
 
 export const useSheetStore = create<SheetState>((set, get) => ({
   // Layout
-  columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
-  rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
+  columnWidths: Array.from({ length: COLUMN_COUNT }, () => DEFAULT_COL_WIDTH),
+  rowHeights: Array.from({ length: ROW_COUNT }, () => DEFAULT_ROW_HEIGHT),
 
   // 시트가 처음 렌더될 때 columnWidths·rowHeights 배열을 초기값으로 채워주는 액션
   initLayout: (cw, rh) => {
@@ -227,8 +237,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     // 데이터가 없으면: 이 자리에서 기본값을 바로 세팅(초기 깜빡임 방지)
     set({
-      columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
-      rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
+      columnWidths: Array.from(
+        { length: COLUMN_COUNT },
+        () => DEFAULT_COL_WIDTH
+      ),
+      rowHeights: Array.from({ length: ROW_COUNT }, () => DEFAULT_ROW_HEIGHT),
       isLayoutReady: true,
     });
   },
