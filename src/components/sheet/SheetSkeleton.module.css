@@ -1,0 +1,89 @@
+.container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--sk-bg, #f3f4f6);
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 6px;
+  animation: sk-shimmer 1.2s infinite linear;
+}
+
+.colHeader {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-auto-flow: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.colBlock {
+  height: 15px;
+  width: 250px;
+  background: var(--sk-bg, #f3f4f6);
+  border-radius: 6px;
+  animation: sk-shimmer 1.2s infinite linear;
+}
+
+.rowHeader {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-auto-rows: 16px;
+  gap: 8px;
+  padding: 8px;
+}
+
+.rowBlock {
+  width: 60%;
+  background: var(--sk-bg, #f3f4f6);
+  border-radius: 6px;
+  animation: sk-shimmer 1.2s infinite linear;
+}
+
+.grid {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  top: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
+  grid-auto-rows: 24px;
+  gap: 8px;
+  padding: 12px;
+}
+
+.cell {
+  background: var(--sk-bg, #f3f4f6);
+  border-radius: 8px;
+  animation: sk-shimmer 1.2s infinite linear;
+}
+
+/* Shimmer 효과 */
+@keyframes sk-shimmer {
+  0% {
+    background-image: linear-gradient(
+      90deg,
+      #f3f4f6 0%,
+      #e5e7eb 40%,
+      #f3f4f6 80%
+    );
+    background-size: 200% 100%;
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

@@ -5,6 +5,7 @@ import ColHeader from "./ColHeader";
 import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 import { useSheetStore } from "./store/useSheetStore";
+import SheetSkeleton from "./SheetSkeleton";
 
 export default function Sheet() {
   const loadCellData = useSheetStore((s) => s.loadCellData);
@@ -43,9 +44,14 @@ export default function Sheet() {
     return () => window.removeEventListener("keydown", onKey); // 화면에서 사라질때 등록을 해제 하는 구조
   }, [editing, selection, clearSelectionCells]);
 
-  // 레이아웃 준비 전엔 렌더 보류
+  // 레이아웃 준비 전엔 스켈레톤 UI 렌더
   if (!isLayoutReady) {
-    return null;
+    return (
+      <SheetSkeleton
+        rowHeaderWidth={rowHeaderWidth}
+        colHeaderHeight={colHeaderHeight}
+      />
+    );
   }
 
   return (
