@@ -295,15 +295,20 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   setFocus: (pos) => set({ focus: pos }),
   clearFocus: () => set({ focus: null }),
   move: (dir) => {
-    const { focus, clearSelection } = get();
+    const { focus } = get();
     if (!focus) return;
+
     let { row, col } = focus;
     if (dir === "up") row = clamp(row - 1, 0, ROW_COUNT - 1);
     if (dir === "down") row = clamp(row + 1, 0, ROW_COUNT - 1);
     if (dir === "left") col = clamp(col - 1, 0, COLUMN_COUNT - 1);
     if (dir === "right") col = clamp(col + 1, 0, COLUMN_COUNT - 1);
-    set({ focus: { row, col } });
-    clearSelection();
+    set({
+      focus: { row, col },
+      selection: { sr: row, sc: col, er: row, ec: col },
+      isSelecting: false,
+      anchor: null,
+    });
   },
 
   // Selection
