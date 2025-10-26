@@ -15,6 +15,15 @@ import {
 // --------- types ---------
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
+export type Dir = "up" | "down" | "left" | "right";
+
+/** 방향별 (행/열) 변화량 매핑 상수*/
+const DIR: Record<Dir, { dr: number; dc: number }> = {
+  up: { dr: -1, dc: 0 },
+  down: { dr: 1, dc: 0 },
+  left: { dr: 0, dc: -1 },
+  right: { dr: 0, dc: 1 },
+};
 
 // --------- Slice ---------
 
@@ -112,6 +121,25 @@ const keyOf = (r: number, c: number) => `${r}:${c}`;
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
 
+// 행/열 인덱스를 시트 경계 안으로 클램프
+const clampRow = (r: number) => clamp(r, 0, ROW_COUNT - 1);
+const clampCol = (c: number) => clamp(c, 0, COLUMN_COUNT - 1);
+
+// 주어진 방향으로 '한 칸' 이동 (경계 자동 클램프)
+const step1 = (p: Pos, dir: Dir): Pos => {
+  const { dr, dc } = DIR[dir];
+  return { row: clampRow(p.row + dr), col: clampCol(p.col + dc) };
+};
+
+// 값 유무 무시, '경계로' 점프 (행/열 끝으로 이동)
+const toEdge = (p: Pos, dir: Dir): Pos => {
+  if (dir === "up") return { row: 0, col: p.col };
+  if (dir === "down") return { row: ROW_COUNT - 1, col: p.col };
+  if (dir === "left") return { row: p.row, col: 0 };
+  // dir === "right"
+  return { row: p.row, col: COLUMN_COUNT - 1 };
+};
+
 function normRect(a: Pos, b: Pos): Rect {
   const sr = Math.min(a.row, b.row);
   const er = Math.max(a.row, b.row);
@@ -147,7 +175,9 @@ async function getCurrentUserId(): Promise<string | null> {
   return user.id;
 }
 
-// ---------- store ----------
+// ==============================
+// ------- store create ---------
+// ==============================
 
 export const useSheetStore = create<SheetState>((set, get) => ({
   // Layout
@@ -247,6 +277,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   isLayoutReady: false,
+
   // Resize
   // 현재 리사이징 중인지 여부를 담는 상태
   // 리사이즈 시작 전엔 null, 드래그 중엔 { type, index, startClient, startSize } 형태로 값이 들어감.
@@ -303,7 +334,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
     debounceLayoutSave(() => {
       const { saveLayout } = get();
-      void saveLayout();
+      saveLayout();
     }, 500);
   },
 
@@ -312,17 +343,15 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   setFocus: (pos) => set({ focus: pos }),
   clearFocus: () => set({ focus: null }),
   move: (dir) => {
-    const { focus } = get();
+    const focus = get().focus;
     if (!focus) return;
 
-    let { row, col } = focus;
-    if (dir === "up") row = clamp(row - 1, 0, ROW_COUNT - 1);
-    if (dir === "down") row = clamp(row + 1, 0, ROW_COUNT - 1);
-    if (dir === "left") col = clamp(col - 1, 0, COLUMN_COUNT - 1);
-    if (dir === "right") col = clamp(col + 1, 0, COLUMN_COUNT - 1);
+    // 한 칸 이동 로직을 step1에 위임
+    const next = step1(focus, dir);
+
     set({
-      focus: { row, col },
-      selection: { sr: row, sc: col, er: row, ec: col },
+      focus: next,
+      selection: { sr: next.row, sc: next.col, er: next.row, ec: next.col },
       isSelecting: false,
       head: null,
       anchor: null,
@@ -330,19 +359,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   moveCtrlEdge: (dir) => {
-    const { focus } = get();
+    const focus = get().focus;
     if (!focus) return;
 
-    let { row, col } = focus;
-
-    if (dir === "up") row = 0;
-    if (dir === "down") row = ROW_COUNT - 1;
-    if (dir === "left") col = 0;
-    if (dir === "right") col = COLUMN_COUNT - 1;
+    const next = toEdge(focus, dir);
 
     set({
-      focus: { row, col },
-      selection: { sr: row, sc: col, er: row, ec: col }, // 단일 선택으로 리셋
+      focus: next,
+      selection: { sr: next.row, sc: next.col, er: next.row, ec: next.col }, // 단일 selection
       anchor: null,
       head: null,
       isSelecting: false,
