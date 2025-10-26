@@ -24,8 +24,12 @@ export default function Sheet() {
 
   const startEdit = useSheetStore((s) => s.startEdit);
   const move = useSheetStore((s) => s.move);
-  const extendSelectionByArrow = useSheetStore((s) => s.extendSelectionByArrow);
+  const moveCtrlEdge = useSheetStore((s) => s.moveCtrlEdge);
 
+  const extendSelectionByArrow = useSheetStore((s) => s.extendSelectionByArrow);
+  const extendSelectionByCtrlEdge = useSheetStore(
+    (s) => s.extendSelectionByCtrlEdge
+  );
   useEffect(() => {
     setSheetId("default");
     loadLayout().then(() => {
@@ -46,35 +50,31 @@ export default function Sheet() {
         e.key === "ArrowLeft" ||
         e.key === "ArrowRight";
 
+      const dir =
+        e.key === "ArrowUp"
+          ? "up"
+          : e.key === "ArrowDown"
+          ? "down"
+          : e.key === "ArrowLeft"
+          ? "left"
+          : "right";
+
+      const ctrl = e.ctrlKey || e.metaKey; // metakey 는 Command(⌘) (Mac) 또는 Windows 키 (Win)
+
       // ---- 1) 방향키 : 포커스 1칸 이동 ----
-      if (isArrow && !e.shiftKey) {
+      if (isArrow && !e.shiftKey && !ctrl) {
         e.preventDefault();
         e.stopPropagation();
-        const dir =
-          e.key === "ArrowUp"
-            ? "up"
-            : e.key === "ArrowDown"
-            ? "down"
-            : e.key === "ArrowLeft"
-            ? "left"
-            : "right";
+
         move(dir);
         return;
       }
 
       // ---- 2) 시프트 + 방향키 : Selection 확장
-      if (e.shiftKey && isArrow) {
+      if (e.shiftKey && isArrow && !ctrl) {
         e.preventDefault();
         e.stopPropagation(); // ← 다른 곳으로 못 흘러가게
 
-        const dir =
-          e.key === "ArrowUp"
-            ? "up"
-            : e.key === "ArrowDown"
-            ? "down"
-            : e.key === "ArrowLeft"
-            ? "left"
-            : "right";
         extendSelectionByArrow(dir);
         return;
       }
@@ -101,6 +101,22 @@ export default function Sheet() {
         move("right");
         return;
       }
+
+      // 5) Ctrl + Arrow: 경계로 점프
+      if (ctrl && isArrow && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveCtrlEdge(dir);
+        return;
+      }
+
+      // 6) Ctrl + Shift + Arrow: 경계까지 확장
+      if (ctrl && e.shiftKey && isArrow) {
+        e.preventDefault();
+        e.stopPropagation();
+        extendSelectionByCtrlEdge(dir);
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKey);
@@ -110,8 +126,10 @@ export default function Sheet() {
     selection,
     focus,
     move,
+    moveCtrlEdge,
     startEdit,
     extendSelectionByArrow,
+    extendSelectionByCtrlEdge,
     clearSelectionCells,
   ]);
 

@@ -50,6 +50,7 @@ type FocusSlice = {
   setFocus: (pos: Pos) => void;
   clearFocus: () => void;
   move: (dir: "up" | "down" | "left" | "right") => void;
+  moveCtrlEdge: (dir: "up" | "down" | "left" | "right") => void;
 };
 
 // 드래깅(Selecting)을 위한 Slice
@@ -70,6 +71,7 @@ type SelectionSlice = {
 
   isSelected: (r: number, c: number) => boolean;
   extendSelectionByArrow: (dir: "up" | "down" | "left" | "right") => void; // ADD
+  extendSelectionByCtrlEdge: (dir: "up" | "down" | "left" | "right") => void; // ADD
 };
 
 type EditSlice = {
@@ -314,6 +316,26 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
+  moveCtrlEdge: (dir) => {
+    const { focus } = get();
+    if (!focus) return;
+
+    let { row, col } = focus;
+
+    if (dir === "up") row = 0;
+    if (dir === "down") row = ROW_COUNT - 1;
+    if (dir === "left") col = 0;
+    if (dir === "right") col = COLUMN_COUNT - 1;
+
+    set({
+      focus: { row, col },
+      selection: { sr: row, sc: col, er: row, ec: col }, // 단일 선택으로 리셋
+      anchor: null,
+      head: null,
+      isSelecting: false,
+    });
+  },
+
   // Selection
   isSelecting: false,
   anchor: null,
@@ -426,9 +448,10 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     // Shift 확장을 처음 시작하면 anchor를 현재 focus로 고정
     const a = anchor ?? { row: focus.row, col: focus.col };
 
+    // head: 확장의 끝점(가변점)
     let h: Pos;
     if (head) {
-      h = { ...head };
+      h = { ...head }; // 있다면 계속 이어서 씀
     } else if (selection) {
       const sel = selection;
       const topLeft: Pos = { row: sel.sr, col: sel.sc };
@@ -457,6 +480,46 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       selection: nextSel,
       isSelecting: false,
       // focus는 건드리지 않음
+    });
+  },
+
+  extendSelectionByCtrlEdge: (dir) => {
+    const { focus, anchor, head, selection } = get();
+    if (!focus) return;
+
+    // anchor 없으면 focus로 고정
+    const a = anchor ?? { row: focus.row, col: focus.col };
+
+    // 현재 head 기준 잡기
+    let h: Pos;
+    if (head) {
+      h = { ...head };
+    } else if (selection) {
+      const sel = selection;
+      const tl: Pos = { row: sel.sr, col: sel.sc };
+      const br: Pos = { row: sel.er, col: sel.ec };
+      if (a.row === sel.sr && a.col === sel.sc) h = br;
+      else if (a.row === sel.er && a.col === sel.ec) h = tl;
+      else if (a.row === sel.sr && a.col === sel.ec)
+        h = { row: sel.er, col: sel.sc };
+      else h = { row: sel.sr, col: sel.ec };
+    } else {
+      h = { row: focus.row, col: focus.col };
+    }
+
+    // 경계로 점프 (값 무시)
+    if (dir === "up") h.row = 0;
+    if (dir === "down") h.row = ROW_COUNT - 1;
+    if (dir === "left") h.col = 0;
+    if (dir === "right") h.col = COLUMN_COUNT - 1;
+
+    const nextSel = normRect(a, h);
+
+    set({
+      anchor: a,
+      head: h,
+      selection: nextSel,
+      isSelecting: false,
     });
   },
 
