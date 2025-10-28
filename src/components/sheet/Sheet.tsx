@@ -35,6 +35,8 @@ export default function Sheet() {
   const copySelectionToTSV = useSheetStore((s) => s.copySelectionToTSV);
   const pasteGridFromSelection = useSheetStore((s) => s.pasteGridFromSelection);
 
+  const undo = useSheetStore((s) => s.undo);
+
   useEffect(() => {
     setSheetId("default");
     loadLayout().then(() => {
@@ -47,7 +49,6 @@ export default function Sheet() {
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (editing) return;
-      if (!selection) return;
 
       const isArrow =
         e.key === "ArrowUp" ||
@@ -167,6 +168,15 @@ export default function Sheet() {
         await clearSelectionCells(); // 3) 선택 영역 삭제(로컬+DB 정리)
         return;
       }
+
+      // 10) Ctrl/Cmd + Z : 되돌리기 (Undo)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        undo();
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKey);
@@ -183,6 +193,7 @@ export default function Sheet() {
     clearSelectionCells,
     copySelectionToTSV,
     pasteGridFromSelection,
+    undo,
   ]);
 
   // 레이아웃 준비 전엔 스켈레톤 UI 렌더

@@ -107,6 +107,23 @@ type ClipboardSlice = {
   pasteGridFromSelection: (grid: string[][]) => void;
 };
 
+type HistorySlice = {
+  /** 최대 저장 스냅샷 개수 */
+  historyLimit: number;
+  /** 과거 스냅샷 스택 */
+  historyPast: Array<{
+    data: Record<string, string>;
+    selection: Rect | null;
+    focus: Pos | null;
+  }>;
+
+  /** 현재 상태(data/selection)를 스냅샷으로 저장 */
+  pushHistory: () => void;
+
+  /** 한 단계 되돌리기 (Ctrl/Cmd+Z용) */
+  undo: () => void;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -114,7 +131,8 @@ type SheetState = LayoutSlice &
   SelectionSlice &
   EditSlice &
   DataSlice &
-  ClipboardSlice;
+  ClipboardSlice &
+  HistorySlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -303,6 +321,69 @@ const gridToTSV = (g: string[][]) => g.map((row) => row.join("\t")).join("\n"); 
 export function tsvToGrid(tsv: string): string[][] {
   const lines = tsv.replace(/\r/g, "").split("\n"); // 윈도우에서는 줄바꿈이 \r\n 으로 되어 있을 수 있어서 \r 제거
   return lines.map((line) => line.split("\t")); // \n을 다시 행 단위로 나누고, \t을 쪼개 다시 열단위로 만듦
+}
+
+// ===== Undo/Redo용: 로컬 데이터 차이를 Supabase에 반영 =====
+async function persistDataDiff(
+  oldData: Record<string, string>,
+  newData: Record<string, string>
+) {
+  // 변경/삭제 목록 계산
+  const toUpsert: Array<{ row: number; col: number; value: string }> = [];
+  const toDelete: Array<{ row: number; col: number }> = [];
+
+  // 키 집합(합집합) 순회
+  const keySet = new Set<string>([
+    ...Object.keys(oldData),
+    ...Object.keys(newData),
+  ]);
+
+  for (const k of keySet) {
+    const before = oldData[k] ?? "";
+    const after = newData[k] ?? "";
+    if (before === after) continue;
+
+    const [r, c] = k.split(":").map((x) => parseInt(x, 10));
+
+    if (after === "" || after == null) {
+      // 값이 빈 문자열로 바뀐 경우 → 삭제
+      toDelete.push({ row: r, col: c });
+    } else {
+      // 그 외 변경 → upsert
+      toUpsert.push({ row: r, col: c, value: after });
+    }
+  }
+
+  if (toUpsert.length === 0 && toDelete.length === 0) return;
+
+  await withUserId(async (uid) => {
+    // 1) upsert
+    if (toUpsert.length > 0) {
+      const payload = toUpsert.map((c) => ({
+        row: c.row,
+        col: c.col,
+        value: c.value,
+        user_id: uid,
+      }));
+      const { error } = await supabase
+        .from("cells")
+        .upsert(payload, { onConflict: "row,col,user_id" });
+      if (error) console.error("undo upsert 실패:", error);
+    }
+
+    // 2) delete
+    if (toDelete.length > 0) {
+      const orClauses = toDelete.map(
+        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+      );
+      const { error } = await supabase
+        .from("cells")
+        .delete()
+        .eq("user_id", uid)
+        .or(orClauses.join(","));
+      if (error) console.error("undo delete 실패:", error);
+    }
+  });
 }
 
 // ==============================
@@ -578,6 +659,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   commitEdit: async (value) => {
     const { editing, clearSelection } = get();
     if (!editing) return;
+
+    get().pushHistory();
+
     const { row, col } = editing;
 
     // 로컬 상태 업데이트
@@ -627,6 +711,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const sel = get().selection;
     if (!sel) return;
 
+    get().pushHistory(); // ctrl z 하기 위해 히스토리에 추가
+
     // 1) 로컬 상태 변경
     const draft = { ...get().data };
     const targets = rectToCells(sel);
@@ -663,6 +749,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const sel = get().selection;
     if (!sel) return;
 
+    get().pushHistory();
     // 데이터 복사
     const { data } = get();
     const next = { ...data };
@@ -691,5 +778,45 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       anchor: null,
       head: null,
     });
+  },
+
+  // ===== History (undo) =====
+  historyLimit: 50,
+  historyPast: [],
+
+  pushHistory: () => {
+    const { data, selection, focus, historyPast, historyLimit } = get();
+    const snap = {
+      data: { ...data }, // 얕은 복사(불변성)
+      selection: selection ? { ...selection } : null,
+      focus: focus ? { ...focus } : null,
+    };
+    const next = [...historyPast, snap];
+    // 용량 제한
+    if (next.length > historyLimit) next.shift();
+    set({ historyPast: next });
+  },
+
+  undo: async () => {
+    const { historyPast } = get();
+    if (historyPast.length === 0) return;
+
+    // 마지막 스냅샷으로 복원
+    const last = historyPast[historyPast.length - 1];
+
+    const prevData = get().data;
+
+    set({
+      data: last.data,
+      selection: last.selection,
+      focus: last.focus ?? null,
+      isSelecting: false,
+      anchor: null,
+      head: null,
+      historyPast: historyPast.slice(0, historyPast.length - 1),
+      editing: null,
+    });
+
+    await persistDataDiff(prevData, last.data);
   },
 }));
