@@ -16,6 +16,7 @@ import {
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
+export type Grid2D = string[][];
 
 // --------- Slice ---------
 
@@ -95,13 +96,25 @@ type DataSlice = {
   clearSelectionCells: () => Promise<void>;
 };
 
+type ClipboardSlice = {
+  // 내부 복사 버퍼 (마지막 복사된 2D 그리드)
+  clipboard: string[][] | null;
+
+  // 현재 selection을 TSV로 반환하고, 내부 버퍼에도 저장
+  copySelectionToTSV: () => string;
+
+  // 현재 selection의 좌상단부터 grid를 로컬 상태에 붙여넣기
+  pasteGridFromSelection: (grid: string[][]) => void;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
   FocusSlice &
   SelectionSlice &
   EditSlice &
-  DataSlice;
+  DataSlice &
+  ClipboardSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -259,6 +272,37 @@ let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 function debounceLayoutSave(fn: () => void, ms = 500) {
   if (__layoutSaveTimer) clearTimeout(__layoutSaveTimer);
   __layoutSaveTimer = setTimeout(fn, ms);
+}
+
+const rectW = (r: Rect) => r.ec - r.sc + 1;
+const rectH = (r: Rect) => r.er - r.sr + 1;
+
+function get2DGrid(sel: Rect): string[][] {
+  const { getValue } = useSheetStore.getState();
+  const h = rectH(sel);
+  const w = rectW(sel);
+  const out: string[][] = Array.from({ length: h }, () =>
+    Array<string>(w).fill("")
+  );
+
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      out[r][c] = getValue(sel.sr + r, sel.sc + c) ?? "";
+    }
+  }
+
+  return out;
+}
+
+// TSV란 “Tab-Separated Values” , 즉 탭 문자로 구분된 값들의 형식
+
+// 2D 배열 → TSV 문자열 (엑셀/시트 호환)
+const gridToTSV = (g: string[][]) => g.map((row) => row.join("\t")).join("\n"); // row 를 \t를 포함시켜서 잇고, 행들을 개행문자로 연결함
+
+// TSV 문자열 → 2D 배열
+function tsvToGrid(tsv: string): string[][] {
+  const lines = tsv.replace(/\r/g, "").split("\n"); // 윈도우에서는 줄바꿈이 \r\n 으로 되어 있을 수 있어서 \r 제거
+  return lines.map((line) => line.split("\t")); // \n을 다시 행 단위로 나누고, \t을 쪼개 다시 열단위로 만듦
 }
 
 // ==============================
@@ -600,6 +644,52 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         .eq("user_id", uid)
         .or(orClauses.join(","));
       if (error) console.error("clearSelectionCells 삭제 실패:", error);
+    });
+  },
+
+  // ====== Clipboard Slice ======
+  clipboard: null,
+
+  copySelectionToTSV: () => {
+    const sel = get().selection;
+    if (!sel) return "";
+    const grid = get2DGrid(sel);
+    set({ clipboard: grid });
+    return gridToTSV(grid);
+  },
+
+  pasteGridFromSelection: (grid) => {
+    // 선택 영역 확인
+    const sel = get().selection;
+    if (!sel) return;
+
+    // 데이터 복사
+    const { data } = get();
+    const next = { ...data };
+
+    const h = grid.length; // column
+    const w = Math.max(...grid.map((r) => r.length)); // row
+
+    for (let rr = 0; rr < h; rr++) {
+      for (let cc = 0; cc < w; cc++) {
+        const r = clampRow(sel.sr + rr);
+        const c = clampCol(sel.sc + cc);
+        const v = grid[rr][cc] ?? "";
+        next[keyOf(r, c)] = v; // "2:3": "A" 이런 식으로 값 기록
+      }
+    }
+
+    set({
+      data: next,
+      selection: {
+        sr: sel.sr,
+        sc: sel.sc,
+        er: clampRow(sel.sr + h - 1),
+        ec: clampCol(sel.sc + w - 1),
+      },
+      isSelecting: false,
+      anchor: null,
+      head: null,
     });
   },
 }));

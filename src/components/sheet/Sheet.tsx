@@ -30,6 +30,10 @@ export default function Sheet() {
   const extendSelectionByCtrlEdge = useSheetStore(
     (s) => s.extendSelectionByCtrlEdge
   );
+
+  const copySelectionToTSV = useSheetStore((s) => s.copySelectionToTSV);
+  const pasteGridFromSelection = useSheetStore((s) => s.pasteGridFromSelection);
+
   useEffect(() => {
     setSheetId("default");
     loadLayout().then(() => {
@@ -117,6 +121,28 @@ export default function Sheet() {
         extendSelectionByCtrlEdge(dir);
         return;
       }
+
+      // 7) Ctrl/Cmd + C : 선택영역 복사
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const tsv = copySelectionToTSV();
+        console.log("[Copy] TSV:", tsv); // 확인용 로그
+        return;
+      }
+
+      // 8) Ctrl/Cmd + V : 붙여넣기
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const buf = useSheetStore.getState().clipboard;
+        if (!buf) return;
+
+        pasteGridFromSelection(buf);
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKey);
@@ -131,6 +157,8 @@ export default function Sheet() {
     extendSelectionByArrow,
     extendSelectionByCtrlEdge,
     clearSelectionCells,
+    copySelectionToTSV,
+    pasteGridFromSelection,
   ]);
 
   // 레이아웃 준비 전엔 스켈레톤 UI 렌더
