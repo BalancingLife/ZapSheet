@@ -6,6 +6,7 @@ import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 import { useSheetStore } from "./store/useSheetStore";
 import SheetSkeleton from "./SheetSkeleton";
+import { tsvToGrid } from "./store/useSheetStore";
 
 export default function Sheet() {
   const loadCellData = useSheetStore((s) => s.loadCellData);
@@ -44,7 +45,7 @@ export default function Sheet() {
 
   // 전역 키보드 처리
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = async (e: KeyboardEvent) => {
       if (editing) return;
       if (!selection) return;
 
@@ -122,25 +123,32 @@ export default function Sheet() {
         return;
       }
 
-      // 7) Ctrl/Cmd + C : 선택영역 복사
+      // 7) Ctrl/Cmd + C : 선택영역 TSV 복사 → 시스템 클립보드
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
         e.preventDefault();
         e.stopPropagation();
 
         const tsv = copySelectionToTSV();
-        console.log("[Copy] TSV:", tsv); // 확인용 로그
+        try {
+          await navigator.clipboard.writeText(tsv);
+        } catch (err) {
+          console.error("Clipboard write 실패:", err);
+        }
         return;
       }
 
-      // 8) Ctrl/Cmd + V : 붙여넣기
+      // 8) Ctrl/Cmd + V : 시스템 클립보드 텍스트 읽어와 붙여넣기
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
         e.preventDefault();
         e.stopPropagation();
 
-        const buf = useSheetStore.getState().clipboard;
-        if (!buf) return;
-
-        pasteGridFromSelection(buf);
+        try {
+          const text = await navigator.clipboard.readText();
+          const grid = tsvToGrid(text); // Helpers에 만든 함수
+          pasteGridFromSelection(grid);
+        } catch (err) {
+          console.error("Clipboard read 실패:", err);
+        }
         return;
       }
     };

@@ -300,7 +300,7 @@ function get2DGrid(sel: Rect): string[][] {
 const gridToTSV = (g: string[][]) => g.map((row) => row.join("\t")).join("\n"); // row 를 \t를 포함시켜서 잇고, 행들을 개행문자로 연결함
 
 // TSV 문자열 → 2D 배열
-function tsvToGrid(tsv: string): string[][] {
+export function tsvToGrid(tsv: string): string[][] {
   const lines = tsv.replace(/\r/g, "").split("\n"); // 윈도우에서는 줄바꿈이 \r\n 으로 되어 있을 수 있어서 \r 제거
   return lines.map((line) => line.split("\t")); // \n을 다시 행 단위로 나누고, \t을 쪼개 다시 열단위로 만듦
 }
