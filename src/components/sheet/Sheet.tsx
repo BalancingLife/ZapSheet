@@ -151,6 +151,22 @@ export default function Sheet() {
         }
         return;
       }
+
+      // 9) Ctrl/Cmd + X : 선택영역 잘라내기(복사 후 삭제)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const tsv = copySelectionToTSV(); // 1) TSV로 복사
+        try {
+          await navigator.clipboard.writeText(tsv); // 2) 시스템 클립보드에 기록
+        } catch (err) {
+          console.error("Clipboard write 실패:", err);
+        }
+
+        await clearSelectionCells(); // 3) 선택 영역 삭제(로컬+DB 정리)
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKey);
