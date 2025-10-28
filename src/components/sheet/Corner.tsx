@@ -4,19 +4,13 @@ import { useSheetStore } from "./store/useSheetStore";
 export default function Corner() {
   const selectAll = useSheetStore((s) => s.selectAll);
 
-  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    selectAll();
-  };
-
   return (
     <div
       className={styles.corner}
       role="button"
       tabIndex={0}
       aria-label="Select all"
-      onMouseDown={onMouseDown}
+      onMouseDown={selectAll}
     />
   );
 }

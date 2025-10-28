@@ -37,6 +37,8 @@ export default function Sheet() {
 
   const undo = useSheetStore((s) => s.undo);
 
+  const selectAll = useSheetStore((s) => s.selectAll);
+
   useEffect(() => {
     setSheetId("default");
     loadLayout().then(() => {
@@ -177,6 +179,15 @@ export default function Sheet() {
         undo();
         return;
       }
+
+      // 11) Ctrl/Cmd + A : 시트 전체 선택
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        selectAll();
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKey);
@@ -194,6 +205,7 @@ export default function Sheet() {
     copySelectionToTSV,
     pasteGridFromSelection,
     undo,
+    selectAll,
   ]);
 
   // 레이아웃 준비 전엔 스켈레톤 UI 렌더
