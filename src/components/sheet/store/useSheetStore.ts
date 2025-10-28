@@ -324,6 +324,7 @@ export function tsvToGrid(tsv: string): string[][] {
 }
 
 // ===== Undo/Redo용: 로컬 데이터 차이를 Supabase에 반영 =====
+
 async function persistDataDiff(
   oldData: Record<string, string>,
   newData: Record<string, string>
@@ -332,7 +333,7 @@ async function persistDataDiff(
   const toUpsert: Array<{ row: number; col: number; value: string }> = [];
   const toDelete: Array<{ row: number; col: number }> = [];
 
-  // 키 집합(합집합) 순회
+  // 비교해야 할 셀 좌표(key) 전부 모으기
   const keySet = new Set<string>([
     ...Object.keys(oldData),
     ...Object.keys(newData),
@@ -343,7 +344,7 @@ async function persistDataDiff(
     const after = newData[k] ?? "";
     if (before === after) continue;
 
-    const [r, c] = k.split(":").map((x) => parseInt(x, 10));
+    const [r, c] = k.split(":").map((x) => parseInt(x, 10)); // "5:3" → [5, 3]
 
     if (after === "" || after == null) {
       // 값이 빈 문자열로 바뀐 경우 → 삭제
