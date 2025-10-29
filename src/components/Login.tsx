@@ -94,7 +94,14 @@ export default function Login() {
   return (
     <div className={styles.page}>
       <div className={styles.wrapper}>
-        <div className={styles.title}>ZapSheet</div>
+        <div className={styles.title}>
+          <img
+            width="50px"
+            src="./images/zapsheet-logo.png"
+            alt="Zap Sheet Logo"
+          />
+          ZapSheet
+        </div>
 
         <div className={styles.card}>
           <h2 className={styles.heading}>
