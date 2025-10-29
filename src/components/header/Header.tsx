@@ -17,7 +17,11 @@ export default function Header() {
       <div className={styles.rowContainer}>
         <div className={styles.left}>
           <div className={styles.logo}>
-            <img width="40px" src="./images/vite.svg" alt="Zap Sheet Logo" />
+            <img
+              width="40px"
+              src="./images/zapsheet-logo.png"
+              alt="Zap Sheet Logo"
+            />
           </div>
           <div className={styles.fileName}>Zap Sheet</div>
         </div>
