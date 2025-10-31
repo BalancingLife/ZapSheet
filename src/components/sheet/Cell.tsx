@@ -1,6 +1,7 @@
 import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";
 import { useSheetStore } from "./store/useSheetStore";
+import { formatWithComma } from "@/utils/numberFormat";
 
 type CellProps = {
   row: number;
@@ -29,7 +30,7 @@ function Cell({ row, col }: CellProps) {
   const commitEdit = useSheetStore((s) => s.commitEdit);
 
   // 표시 값
-  const display = useSheetStore((s) => s.getValue(row, col));
+  const val = useSheetStore((s) => s.getValue(row, col));
 
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,7 +54,7 @@ function Cell({ row, col }: CellProps) {
 
   // 편집 커밋
   const commit = (nextVal?: string) => {
-    commitEdit(nextVal ?? display);
+    commitEdit(nextVal ?? val);
   };
 
   // ESC시 편집 취소, 내용 null 처리
@@ -104,7 +105,7 @@ function Cell({ row, col }: CellProps) {
         <input
           ref={inputRef}
           className={styles.editorInput}
-          defaultValue={display}
+          defaultValue={val}
           onKeyDown={(e) => {
             e.stopPropagation();
             const val = (e.target as HTMLInputElement).value;
@@ -141,7 +142,7 @@ function Cell({ row, col }: CellProps) {
       onMouseUp={onMouseUp}
       onDoubleClick={() => startEdit({ row, col })}
     >
-      {display}
+      {formatWithComma(val)}
     </div>
   );
 }
