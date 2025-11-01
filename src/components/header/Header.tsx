@@ -1,6 +1,7 @@
 import styles from "./Header.module.css";
 import { supabase } from "@/lib/supabaseClient";
 import { useSheetStore } from "../sheet/store/useSheetStore";
+import NameBox from "./NameBox";
 
 export default function Header() {
   const clearFocus = useSheetStore((s) => s.clearFocus);
@@ -33,7 +34,9 @@ export default function Header() {
       </div>
 
       <div>Toolbar 영역</div>
-      <div>NameBox 영역</div>
+      <div>
+        <NameBox />
+      </div>
     </div>
   );
 }
