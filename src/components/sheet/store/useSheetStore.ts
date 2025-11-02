@@ -82,7 +82,8 @@ type SelectionSlice = {
 
 type EditSlice = {
   editing: Pos | null;
-  startEdit: (pos: Pos) => void;
+  editingSource: "cell" | "formula" | null;
+  startEdit: (pos: Pos, source?: "cell" | "formula") => void;
   cancelEdit: () => void;
   commitEdit: (value: string) => void;
 };
@@ -536,7 +537,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (pos) {
       get().syncMirrorToFocus();
     } else {
-      set({ formulaMirror: "`" });
+      set({ formulaMirror: "" });
     }
   },
 
@@ -671,7 +672,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // Edit
   editing: null,
-  startEdit: (pos) => set({ editing: pos }),
+  editingSource: null,
+  startEdit: (pos, source = "cell") =>
+    set({ editing: pos, editingSource: source }),
   cancelEdit: () => set({ editing: null }),
 
   commitEdit: async (value) => {
@@ -686,6 +689,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set((s) => ({
       data: { ...s.data, [keyOf(row, col)]: value },
       editing: null,
+      editingSource: null,
       focus: { row, col },
     }));
     clearSelection(); // selection 영역 초기화

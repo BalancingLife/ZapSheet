@@ -30,7 +30,3 @@
   padding-left: 6px;
   color: #111827; /* gray-900 */
 }
-
-.input::placeholder {
-  color: #9ca3af; /* gray-400 */
-}

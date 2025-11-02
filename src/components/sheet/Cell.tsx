@@ -16,6 +16,8 @@ function Cell({ row, col }: CellProps) {
     (s) => s.editing?.row === row && s.editing?.col === col
   );
 
+  const editingSource = useSheetStore((s) => s.editingSource);
+
   const setFocus = useSheetStore((s) => s.setFocus);
 
   // SelectionSlice
@@ -30,18 +32,26 @@ function Cell({ row, col }: CellProps) {
   const commitEdit = useSheetStore((s) => s.commitEdit);
 
   // 표시 값
-  const val = useSheetStore((s) => s.getValue(row, col));
+  const val = useSheetStore((s) => {
+    const isThis = s.editing?.row === row && s.editing?.col === col;
+    if (isThis && s.editingSource === "formula") return s.formulaMirror; // ★
+    return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
+  });
 
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isFocused && !isEditing) cellRef.current?.focus();
-  }, [isFocused, isEditing]);
+    if (isFocused && isEditing && editingSource === "cell") {
+      // 편집용 input에 포커스(아래 useEffect에서 처리)
+    } else if (isFocused && !isEditing) {
+      cellRef.current?.focus();
+    }
+  }, [isFocused, isEditing, editingSource]);
 
+  // 편집 input 포커스 (★ cell 편집일 때만)
   useEffect(() => {
-    if (isEditing) {
-      // requestAnimationFrame 사용으로 렌더 → DOM 붙음 → 다음 프레임에 focus/select” 순서를 보장
+    if (isEditing && editingSource === "cell") {
       requestAnimationFrame(() => {
         const el = inputRef.current;
         if (el) {
@@ -50,7 +60,7 @@ function Cell({ row, col }: CellProps) {
         }
       });
     }
-  }, [isEditing]);
+  }, [isEditing, editingSource]);
 
   // 편집 커밋
   const commit = (nextVal?: string) => {
@@ -92,7 +102,9 @@ function Cell({ row, col }: CellProps) {
     endSel();
   }, [endSel]);
 
-  if (isEditing) {
+  const isCellEditing = isEditing && editingSource === "cell"; // ★
+
+  if (isCellEditing) {
     return (
       <div
         ref={cellRef}
@@ -106,6 +118,11 @@ function Cell({ row, col }: CellProps) {
           ref={inputRef}
           className={styles.editorInput}
           defaultValue={val}
+          onInput={(e) => {
+            // 셀에서 입력 중일 때 FormulaInput 미러 동기화
+            const next = (e.target as HTMLInputElement).value;
+            useSheetStore.getState().setFormulaInput(next);
+          }}
           onKeyDown={(e) => {
             e.stopPropagation();
             const val = (e.target as HTMLInputElement).value;
@@ -129,6 +146,7 @@ function Cell({ row, col }: CellProps) {
     );
   }
 
+  // formula 편집 중이거나, 편집이 아닌 일반 보기
   return (
     <div
       ref={cellRef}
@@ -142,7 +160,7 @@ function Cell({ row, col }: CellProps) {
       onMouseUp={onMouseUp}
       onDoubleClick={() => startEdit({ row, col })}
     >
-      {formatWithComma(val)}
+      {isEditing && editingSource === "formula" ? val : formatWithComma(val)}
     </div>
   );
 }
