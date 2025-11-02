@@ -1,12 +1,15 @@
+.container {
+  display: flex;
+}
+
 .read {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 6px 15px;
   background: #ffffff;
-  border: 1px solid #e5e7eb; /* gray-200 */
-  border-radius: 8px;
+  border: none;
+  border-right: 1px solid #e5e7eb; /* gray-200 */
   cursor: text;
   transition: background 120ms ease, border-color 120ms ease,
     box-shadow 120ms ease;
@@ -24,9 +27,9 @@
 }
 
 .text {
-  flex: 1;
+  display: flex;
+  justify-content: space-between; /* 왼쪽(글자) ↔ 오른쪽(caret) */
   font-size: 14px;
-  font-weight: 600;
   color: #0f172a; /* slate-900 */
   white-space: nowrap;
   overflow: hidden;
@@ -34,19 +37,16 @@
 }
 
 .caret {
+  margin-left: auto;
   font-size: 10px;
   opacity: 0.7;
 }
 
 .input {
-  width: 100%;
-  padding: 6px 10px;
+  width: 78px;
+  padding: 6px 15px;
   font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-  background: #ffffff;
-  border: 1px solid #93c5fd; /* blue-300 */
-  border-radius: 8px;
+
+  border: 2px solid #93c5fd; /* blue-300 */
   outline: none;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* blue focus ring */
 }

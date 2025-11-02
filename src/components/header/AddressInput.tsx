@@ -71,7 +71,7 @@ export default function AddressInput() {
   const readOnly = !!isSelecting; // 드래깅 중 읽기 전용
 
   return (
-    <div className={styles.AddressInput}>
+    <div className={styles.container}>
       {!editing ? (
         <button
           type="button"
@@ -83,12 +83,10 @@ export default function AddressInput() {
           aria-label="주소/이름 박스"
           disabled={readOnly}
         >
-          <span className={styles.text}>{label || "—"}</span>
-          {!readOnly && (
-            <span className={styles.caret} aria-hidden>
-              ▼
-            </span>
-          )}
+          <span className={styles.text}>{label}</span>
+          <span className={styles.caret} aria-hidden>
+            ▼
+          </span>
         </button>
       ) : (
         <input
