@@ -124,6 +124,12 @@ type HistorySlice = {
   undo: () => void;
 };
 
+type FormulaSlice = {
+  formulaMirror: string;
+  setFormulaInput: (v: string) => void;
+  syncMirrorToFocus: () => void;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -132,7 +138,8 @@ type SheetState = LayoutSlice &
   EditSlice &
   DataSlice &
   ClipboardSlice &
-  HistorySlice;
+  HistorySlice &
+  FormulaSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -226,6 +233,8 @@ function setFocusAsSingleSelection(
     anchor: null,
     head: null,
   });
+
+  useSheetStore.getState().syncMirrorToFocus();
 }
 
 // Shift 확장 시작 시 anchor/head 초기화
@@ -522,7 +531,15 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // Focus
   focus: null, // pos(r,c)를 받음
-  setFocus: (pos) => set({ focus: pos }),
+  setFocus: (pos) => {
+    set({ focus: pos });
+    if (pos) {
+      get().syncMirrorToFocus();
+    } else {
+      set({ formulaMirror: "`" });
+    }
+  },
+
   clearFocus: () => set({ focus: null }),
 
   move: (dir) => {
@@ -821,5 +838,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
 
     await persistDataDiff(prevData, last.data);
+  },
+
+  formulaMirror: "",
+
+  setFormulaInput: (v) =>
+    set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v })),
+
+  syncMirrorToFocus: () => {
+    const f = get().focus;
+    if (!f) return;
+    const v = get().getValue(f.row, f.col) ?? "";
+    set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v }));
   },
 }));
