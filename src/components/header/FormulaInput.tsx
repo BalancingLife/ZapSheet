@@ -33,9 +33,7 @@ export default function FormulaInput() {
       } else if (e.key === "Escape") {
         // 롤백: 포커스 셀 값을 다시 미러에 반영하고 편집 종료
         syncMirrorToFocus();
-
-        // 선택: cancelEdit()을 원하면 아래 한 줄 추가
-        // useSheetStore.getState().cancelEdit();
+        useSheetStore.getState().cancelEdit();
       }
     },
     [focus, value, commitEdit, syncMirrorToFocus, move]

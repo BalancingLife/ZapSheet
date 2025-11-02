@@ -50,6 +50,16 @@ export default function Sheet() {
   // 전역 키보드 처리
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
+      // 인풋/텍스트영역/콘텐츠에디터블이면 전역 키보드 핸들러 무시
+      const ae = document.activeElement as HTMLElement | null;
+      const tag = (ae?.tagName || "").toLowerCase();
+      const isTextField =
+        tag === "input" ||
+        tag === "textarea" ||
+        (ae && (ae as HTMLElement).isContentEditable === true);
+
+      if (isTextField) return;
+
       if (editing) return;
 
       const isArrow =
