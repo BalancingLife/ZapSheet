@@ -5,64 +5,7 @@ import {
   type Rect,
   type Pos,
 } from "@/components/sheet/store/useSheetStore";
-
-/** 0-indexed col -> A1 표기 */
-function colToLabel(c: number): string {
-  let n = c + 1;
-  let s = "";
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    s = String.fromCharCode(65 + rem) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
-/** A1 → {row:0,col:0} */
-function parseA1(a1: string): { row: number; col: number } | null {
-  const s = a1.trim().toUpperCase();
-  const m = /^([A-Z]+)\s*([0-9]+)$/.exec(s);
-  if (!m) return null;
-
-  const [, colStr, rowStr] = m;
-  let col = 0;
-  for (let i = 0; i < colStr.length; i++) {
-    col = col * 26 + (colStr.charCodeAt(i) - 64); // 'A'->1
-  }
-  col -= 1;
-
-  const row = parseInt(rowStr, 10) - 1;
-  if (row < 0 || col < 0) return null;
-  return { row, col };
-}
-
-/** "B2" 또는 "A1:C5" → Rect(0-indexed) */
-function parseAddress(input: string): Rect | null {
-  const raw = input.replace(/\s+/g, "").toUpperCase();
-  if (!raw) return null;
-
-  if (raw.includes(":")) {
-    const [lhs, rhs] = raw.split(":");
-    const p1 = parseA1(lhs);
-    const p2 = parseA1(rhs);
-    if (!p1 || !p2) return null;
-    const sr = Math.min(p1.row, p2.row);
-    const sc = Math.min(p1.col, p2.col);
-    const er = Math.max(p1.row, p2.row);
-    const ec = Math.max(p1.col, p2.col);
-    return { sr, sc, er, ec };
-  }
-
-  const p = parseA1(raw);
-  return p ? { sr: p.row, sc: p.col, er: p.row, ec: p.col } : null;
-}
-
-/** Rect → "A1" 또는 "A1:C5" */
-function rectToLabel(rect: Rect): string {
-  const a = `${colToLabel(rect.sc)}${rect.sr + 1}`;
-  const b = `${colToLabel(rect.ec)}${rect.er + 1}`;
-  return rect.sr === rect.er && rect.sc === rect.ec ? a : `${a}:${b}`;
-}
+import { a1ToRect, rectToA1 } from "@/utils/cellAddress";
 
 export default function AddressInput() {
   // ---- store states ----
@@ -80,7 +23,7 @@ export default function AddressInput() {
 
   // 현재 선택 라벨
   const label = useMemo(
-    () => (selection ? rectToLabel(selection) : ""),
+    () => (selection ? rectToA1(selection) : ""),
     [selection]
   );
 
@@ -110,7 +53,7 @@ export default function AddressInput() {
   };
 
   const commit = () => {
-    const parsed = parseAddress(draft);
+    const parsed = a1ToRect(draft);
     if (parsed) {
       jumpTo(parsed);
     } else {

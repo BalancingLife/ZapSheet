@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { COLUMN_COUNT } from "./SheetConstants";
 import styles from "./ColHeader.module.css";
-import { getColName } from "@/utils/getColName";
+import { colToLabel } from "@/utils/cellAddress";
 import { useSheetStore } from "./store/useSheetStore";
 
 interface ColHeaderProps {
@@ -54,9 +54,9 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
           e.preventDefault();
           selectColumn(i, e.shiftKey); // Shift로 확장
         }}
-        title={getColName(i)}
+        title={colToLabel(i)}
       >
-        {getColName(i)}
+        {colToLabel(i)}
 
         {/* 크기 변경 div */}
 
