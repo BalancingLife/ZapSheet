@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { COLUMN_COUNT } from "./SheetConstants";
 import styles from "./ColHeader.module.css";
-import { colToLabel } from "@/utils/cellAddress";
+import { colToLabel } from "@/utils/a1Utils";
 import { useSheetStore } from "./store/useSheetStore";
 
 interface ColHeaderProps {

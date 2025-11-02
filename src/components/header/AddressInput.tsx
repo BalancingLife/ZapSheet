@@ -5,7 +5,7 @@ import {
   type Rect,
   type Pos,
 } from "@/components/sheet/store/useSheetStore";
-import { a1ToRect, rectToA1 } from "@/utils/cellAddress";
+import { a1ToRect, rectToA1 } from "@/utils/a1Utils";
 
 export default function AddressInput() {
   // ---- store states ----
