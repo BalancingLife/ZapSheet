@@ -745,15 +745,15 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     return gridToTSV(grid);
   },
 
-  pasteGridFromSelection: (grid) => {
+  pasteGridFromSelection: async (grid) => {
     // 선택 영역 확인
     const sel = get().selection;
     if (!sel) return;
 
     get().pushHistory();
-    // 데이터 복사
-    const { data } = get();
-    const next = { ...data };
+
+    const prev = get().data;
+    const next = { ...prev };
 
     const h = grid.length; // column
     const w = Math.max(...grid.map((r) => r.length)); // row
@@ -779,6 +779,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       anchor: null,
       head: null,
     });
+
+    await persistDataDiff(prev, next);
   },
 
   // ===== History (undo) =====
