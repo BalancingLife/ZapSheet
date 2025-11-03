@@ -21,6 +21,7 @@ export default function Sheet() {
 
   const setSheetId = useSheetStore((s) => s.setSheetId);
   const loadLayout = useSheetStore((s) => s.loadLayout);
+  const loadCellStyles = useSheetStore((s) => s.loadCellStyles);
   const isLayoutReady = useSheetStore((s) => s.isLayoutReady);
 
   const startEdit = useSheetStore((s) => s.startEdit);
@@ -41,12 +42,14 @@ export default function Sheet() {
   const selectAll = useSheetStore((s) => s.selectAll);
 
   useEffect(() => {
-    setSheetId("default");
-    loadLayout().then(() => {
-      // 레이아웃 준비된 뒤에 셀 데이터 로드
-      loadCellData();
-    });
-  }, [setSheetId, loadLayout, loadCellData]);
+    const init = async () => {
+      setSheetId("default");
+      await loadLayout();
+      await loadCellData();
+      await loadCellStyles();
+    };
+    init();
+  }, [setSheetId, loadLayout, loadCellData, loadCellStyles]);
 
   // 전역 키보드 처리
   useEffect(() => {
@@ -225,6 +228,7 @@ export default function Sheet() {
     copySelectionToTSV,
     pasteGridFromSelection,
     undo,
+    redo,
     selectAll,
   ]);
 

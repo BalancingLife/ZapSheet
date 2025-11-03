@@ -148,7 +148,14 @@ type StyleSlice = {
   getFontSizeForFocus: () => number;
 
   // 선택영역 폰트사이즈 변경
-  setFontSize: (next: number) => void;
+  setFontSize: (next: number) => Promise<void> | void;
+
+  /** Supabase로부터 스타일 로드 */
+  loadCellStyles: () => Promise<void>;
+
+  upsertCellStyles?: (
+    payload: Array<{ row: number; col: number; style_json: CellStyle }>
+  ) => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -923,7 +930,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     return get().getFontSize(f.row, f.col);
   },
 
-  setFontSize: (next) => {
+  setFontSize: async (next) => {
     // 1) 유효 범위 보정
     const n = Math.round(clamp(next, 0, 72));
 
@@ -943,9 +950,45 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }
 
     set({ stylesByCell: map });
+    // 2) Supabase upsert (배치)
+    await withUserId(async (uid) => {
+      const { sheetId } = get();
+      const rows = targets.map(({ row, col }) => ({
+        user_id: uid,
+        sheet_id: sheetId,
+        row,
+        col,
+        style_json: map[keyOf(row, col)],
+        updated_at: new Date().toISOString(),
+      }));
 
-    // TODO:
-    // - undo/redo: snapshot에 styles 포함 or diff 저장 전략 추가
-    // - Supabase: cell_styles upsert 배치
+      const { error } = await supabase
+        .from("cell_styles")
+        .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+
+      if (error) console.error("cell_styles upsert 실패:", error);
+    });
+  },
+
+  loadCellStyles: async () => {
+    await withUserId(async (uid) => {
+      const { sheetId } = get();
+      const { data, error } = await supabase
+        .from("cell_styles")
+        .select("row,col,style_json")
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId);
+
+      if (error) {
+        console.error("cell_styles 로드 실패:", error);
+        return;
+      }
+
+      const map: Record<string, CellStyle> = {};
+      for (const rec of data ?? []) {
+        map[keyOf(rec.row, rec.col)] = rec.style_json as CellStyle;
+      }
+      set({ stylesByCell: map });
+    });
   },
 }));
