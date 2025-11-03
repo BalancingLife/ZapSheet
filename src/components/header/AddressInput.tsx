@@ -106,7 +106,7 @@ export default function AddressInput() {
           onBlur={commit}
           spellCheck={false}
           autoCapitalize="characters"
-          placeholder="A1 또는 A1:C5"
+          placeholder="A1 or A1:C5"
           aria-label="주소 입력"
         />
       )}

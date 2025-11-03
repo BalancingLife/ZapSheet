@@ -1,6 +1,6 @@
 .toolBarConatiner {
   display: flex;
-
+  align-items: center;
   gap: 3px;
   background-color: #f0f4f9;
   padding: 7px 10px;
