@@ -1,7 +1,7 @@
 import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";
 import { useSheetStore } from "./store/useSheetStore";
-import { formatWithComma } from "@/utils/numberFormat";
+import { formatWithComma, isNumericValue } from "@/utils/numberFormat";
 
 type CellProps = {
   row: number;
@@ -42,6 +42,9 @@ function Cell({ row, col }: CellProps) {
 
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const numeric = isNumericValue(val);
+  const alignClass = numeric ? styles.alignBottomRight : styles.alignBottomLeft;
 
   useEffect(() => {
     if (isFocused && isEditing && editingSource === "cell") {
@@ -155,9 +158,9 @@ function Cell({ row, col }: CellProps) {
       ref={cellRef}
       tabIndex={0} // tabIndex => 이 요소가 키보드 포커스를 받을 수 있게 만든다
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
-      className={`${styles.cellView} ${isFocused ? styles.focused : ""} ${
-        isSelected ? "selected" : ""
-      }`}
+      className={`${styles.cellView} ${alignClass} ${
+        isFocused ? styles.focused : ""
+      } ${isSelected ? "selected" : ""}`}
       style={{ fontSize: `${fontSize}px` }}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}

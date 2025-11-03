@@ -12,3 +12,13 @@ export const formatWithComma = (s: string) => {
   const n = Number(t);
   return Number.isFinite(n) ? nf.format(n) : s;
 };
+
+export const isNumericValue = (v: unknown) => {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim();
+  if (!s) return false;
+  if (s.startsWith("=")) return false; // 수식 표시는 숫자로 취급 X
+  const normalized = s.replace(/,/g, "");
+  const n = Number(normalized);
+  return Number.isFinite(n);
+};
