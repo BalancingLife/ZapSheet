@@ -1,4 +1,4 @@
-.container {
+.cellView {
   outline: none;
   display: flex;
   justify-content: center;
@@ -8,6 +8,7 @@
   box-sizing: border-box;
   overflow: hidden;
   white-space: nowrap; /* 한 줄 강제 */
+  font-size: 13px;
 }
 
 .focused {
@@ -20,5 +21,5 @@
   display: block;
   border: none;
   box-sizing: border-box;
-  font: inherit;
+  font-size: 13px;
 }

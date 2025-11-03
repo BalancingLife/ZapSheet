@@ -38,6 +38,8 @@ function Cell({ row, col }: CellProps) {
     return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
   });
 
+  const fontSize = useSheetStore((s) => s.getFontSize(row, col));
+
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -113,6 +115,7 @@ function Cell({ row, col }: CellProps) {
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.preventDefault()}
+        style={{ fontSize: `${fontSize}px` }}
       >
         <input
           ref={inputRef}
@@ -152,9 +155,10 @@ function Cell({ row, col }: CellProps) {
       ref={cellRef}
       tabIndex={0} // tabIndex => 이 요소가 키보드 포커스를 받을 수 있게 만든다
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
-      className={`${styles.container} ${isFocused ? styles.focused : ""} ${
+      className={`${styles.cellView} ${isFocused ? styles.focused : ""} ${
         isSelected ? "selected" : ""
       }`}
+      style={{ fontSize: `${fontSize}px` }}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}

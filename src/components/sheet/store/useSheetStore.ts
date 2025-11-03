@@ -10,6 +10,7 @@ import {
   COL_MIN,
   DEFAULT_ROW_HEIGHT,
   DEFAULT_COL_WIDTH,
+  DEFAULT_FONT_SIZE,
 } from "../SheetConstants";
 
 // --------- types ---------
@@ -17,7 +18,7 @@ export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
 export type Grid2D = string[][];
-
+export type CellStyle = { fontSize?: number };
 // --------- Slice ---------
 
 // UI 상태
@@ -137,6 +138,19 @@ type FormulaSlice = {
   syncMirrorToFocus: () => void;
 };
 
+type StyleSlice = {
+  stylesByCell: Record<string, CellStyle>;
+
+  // 개별 좌표 조회
+  getFontSize: (row: number, col: number) => number;
+
+  // 포커스 셀 기준 조회
+  getFontSizeForFocus: () => number;
+
+  // 선택영역 폰트사이즈 변경
+  setFontSize: (next: number) => void;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -146,7 +160,8 @@ type SheetState = LayoutSlice &
   DataSlice &
   ClipboardSlice &
   HistorySlice &
-  FormulaSlice;
+  FormulaSlice &
+  StyleSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -545,7 +560,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   // Focus
-  focus: null, // pos(r,c)를 받음
+  focus: { row: 0, col: 0 },
   setFocus: (pos) => {
     set({ focus: pos });
     if (pos) {
@@ -575,7 +590,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   isSelecting: false,
   anchor: null,
   head: null,
-  selection: null,
+  selection: { sr: 0, sc: 0, er: 0, ec: 0 },
 
   startSelection: (pos, extend = false) => {
     const { focus, setFocus } = get();
@@ -891,5 +906,46 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (!f) return;
     const v = get().getValue(f.row, f.col) ?? "";
     set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v }));
+  },
+
+  // ----StyleSlice----
+  stylesByCell: {},
+
+  getFontSize: (row, col) => {
+    const key = keyOf(row, col);
+    const style = get().stylesByCell[key];
+    return style?.fontSize ?? DEFAULT_FONT_SIZE;
+  },
+
+  getFontSizeForFocus: () => {
+    const f = get().focus;
+    if (!f) return DEFAULT_FONT_SIZE;
+    return get().getFontSize(f.row, f.col);
+  },
+
+  setFontSize: (next) => {
+    // 1) 유효 범위 보정
+    const n = Math.round(clamp(next, 0, 72));
+
+    // 2) 타겟 셀 집합: selection 있으면 그 범위, 없으면 focus 1칸
+    const sel = get().selection;
+    const focus = get().focus;
+    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+
+    if (targets.length === 0) return;
+
+    // 3) 한번에 갱신(단일 set)
+    const map = { ...get().stylesByCell };
+    for (const { row, col } of targets) {
+      const key = keyOf(row, col);
+      const prev = map[key] ?? {};
+      map[key] = { ...prev, fontSize: n };
+    }
+
+    set({ stylesByCell: map });
+
+    // TODO:
+    // - undo/redo: snapshot에 styles 포함 or diff 저장 전략 추가
+    // - Supabase: cell_styles upsert 배치
   },
 }));

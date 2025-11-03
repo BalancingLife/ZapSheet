@@ -26,3 +26,55 @@
 .redoIcon:hover {
   background: #e0e7ff;
 }
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #fff;
+  border: 1px solid #dcdfe3;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.label {
+  font-size: 13px;
+  color: #444;
+  margin-right: 4px;
+}
+
+/* 숫자 입력창 */
+.sizeInput {
+  width: 48px;
+  height: 24px;
+  border: 1px solid #dcdfe3;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.sizeInput:focus {
+  border-color: #409eff;
+}
+
+/* + / - 버튼 */
+.btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #dcdfe3;
+  border-radius: 4px;
+  background-color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btn:hover {
+  background-color: #f5f7fa;
+  border-color: #c0c4cc;
+}
