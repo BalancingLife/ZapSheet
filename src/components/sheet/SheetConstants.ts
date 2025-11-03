@@ -10,3 +10,4 @@ export const DEFAULT_COL_WIDTH = 100;
 export const DEFAULT_ROW_HEIGHT = 25;
 
 export const DEFAULT_FONT_SIZE = 13;
+export const FONT_SIZE_TO_ROW_RATIO = 1.6;

@@ -11,6 +11,7 @@ import {
   DEFAULT_ROW_HEIGHT,
   DEFAULT_COL_WIDTH,
   DEFAULT_FONT_SIZE,
+  FONT_SIZE_TO_ROW_RATIO,
 } from "../SheetConstants";
 
 // --------- types ---------
@@ -26,6 +27,9 @@ type LayoutSlice = {
   columnWidths: number[];
   rowHeights: number[];
   initLayout: (defaultColWidth: number, defaultRowHeight: number) => void;
+  setRowHeight: (row: number, height: number, isManual?: boolean) => void;
+  manualRowFlags: boolean[]; //  각 행의 수동 조정 여부 (true면 자동 변경 금지)
+  resetManualRowFlags: () => void; //  옵션: 초기화 함수
 };
 
 // Supabase의 레이아웃을 불러오는 Slice, 서버 동기화 로직
@@ -506,6 +510,42 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
+  // 행 높이 변경
+  setRowHeight: (row, height, isManual = false) => {
+    set((state) => {
+      const nextHeights = [...state.rowHeights];
+      const nextFlags = [...state.manualRowFlags];
+
+      nextHeights[row] = height;
+
+      //  사용자가 수동으로 조정했다면 플래그 true
+      if (isManual) {
+        nextFlags[row] = true;
+      }
+
+      //  행이 너무 작아졌다면 자동 모드로 되돌리기
+      if (height <= DEFAULT_ROW_HEIGHT + 5) {
+        nextFlags[row] = false;
+      }
+
+      return { rowHeights: nextHeights, manualRowFlags: nextFlags };
+    });
+
+    // (선택) 레이아웃 자동 저장: 0.5초 뒤 Supabase 반영
+    debounceLayoutSave(() => {
+      const { saveLayout } = get();
+      saveLayout().catch(console.error);
+    }, 500);
+  },
+
+  manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
+
+  resetManualRowFlags: () => {
+    set({
+      manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
+    });
+  },
+
   // Resize
   // 현재 리사이징 중인지 여부를 담는 상태
   // 리사이즈 시작 전엔 null, 드래그 중엔 { type, index, startClient, startSize } 형태로 값이 들어감.
@@ -558,6 +598,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   endResize: () => {
+    const rs = get().resizing;
+    if (rs?.type === "row") {
+      get().setRowHeight(rs.index, get().rowHeights[rs.index], true); // ✅ isManual=true
+    }
+
     set({ resizing: null });
     // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
     debounceLayoutSave(() => {
@@ -931,7 +976,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   setFontSize: async (next) => {
-    // 1) 유효 범위 보정
     const n = Math.round(clamp(next, 0, 72));
 
     // 2) 타겟 셀 집합: selection 있으면 그 범위, 없으면 focus 1칸
@@ -968,6 +1012,36 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       if (error) console.error("cell_styles upsert 실패:", error);
     });
+
+    const { rowHeights, manualRowFlags, setRowHeight } = get();
+
+    // 변경된 행들만 추출
+    const affectedRows = [...new Set(targets.map((t) => t.row))];
+
+    for (const r of affectedRows) {
+      // 수동 조정된 행은 건너뜀
+      if (manualRowFlags[r]) continue;
+
+      // 현재 행의 모든 셀에서 최대 폰트 크기 찾기
+      let maxFont = DEFAULT_FONT_SIZE;
+      for (let c = 0; c < COLUMN_COUNT; c++) {
+        const style = map[keyOf(r, c)];
+        if (style?.fontSize && style.fontSize > maxFont) {
+          maxFont = style.fontSize;
+        }
+      }
+
+      // 목표 높이 계산
+      const desiredHeight = Math.max(
+        DEFAULT_ROW_HEIGHT,
+        Math.round(maxFont * FONT_SIZE_TO_ROW_RATIO)
+      );
+
+      // 높이가 이미 비슷하면 생략 (불필요한 set 방지)
+      if (Math.abs(rowHeights[r] - desiredHeight) > 1) {
+        setRowHeight(r, desiredHeight);
+      }
+    }
   },
 
   loadCellStyles: async () => {
