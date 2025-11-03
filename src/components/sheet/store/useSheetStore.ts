@@ -118,11 +118,17 @@ type HistorySlice = {
     focus: Pos | null;
   }>;
 
+  historyFuture: Array<{
+    data: Record<string, string>;
+    selection: Rect | null;
+    focus: Pos | null;
+  }>;
+
   /** 현재 상태(data/selection)를 스냅샷으로 저장 */
   pushHistory: () => void;
 
-  /** 한 단계 되돌리기 (Ctrl/Cmd+Z용) */
-  undo: () => void;
+  undo: () => void | Promise<void>;
+  redo: () => void | Promise<void>;
 };
 
 type FormulaSlice = {
@@ -395,6 +401,14 @@ async function persistDataDiff(
       if (error) console.error("undo delete 실패:", error);
     }
   });
+}
+
+function makeSnapshot(s: SheetState) {
+  return {
+    data: { ...s.data },
+    selection: s.selection ? { ...s.selection } : null,
+    focus: s.focus ? { ...s.focus } : null,
+  };
 }
 
 // ==============================
@@ -807,28 +821,24 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // ===== History (undo) =====
   historyLimit: 50,
   historyPast: [],
+  historyFuture: [],
 
   pushHistory: () => {
-    const { data, selection, focus, historyPast, historyLimit } = get();
-    const snap = {
-      data: { ...data }, // 얕은 복사(불변성)
-      selection: selection ? { ...selection } : null,
-      focus: focus ? { ...focus } : null,
-    };
-    const next = [...historyPast, snap];
-    // 용량 제한
-    if (next.length > historyLimit) next.shift();
-    set({ historyPast: next });
+    const { historyPast, historyLimit } = get();
+    const snap = makeSnapshot(get());
+    const nextPast = [...historyPast, snap];
+    if (nextPast.length > historyLimit) nextPast.shift();
+
+    set({ historyPast: nextPast, historyFuture: [] });
   },
 
   undo: async () => {
-    const { historyPast } = get();
+    const { historyPast, historyFuture } = get();
     if (historyPast.length === 0) return;
 
-    // 마지막 스냅샷으로 복원
-    const last = historyPast[historyPast.length - 1];
-
-    const prevData = get().data;
+    const prevData = get().data; // DB diff용 (변경 전)
+    const last = historyPast[historyPast.length - 1]; // 복원할 스냅샷
+    const nowSnap = makeSnapshot(get()); // 현재 스냅샷을 future로 보관
 
     set({
       data: last.data,
@@ -837,13 +847,40 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       isSelecting: false,
       anchor: null,
       head: null,
-      historyPast: historyPast.slice(0, historyPast.length - 1),
       editing: null,
+      historyPast: historyPast.slice(0, historyPast.length - 1),
+      historyFuture: [...historyFuture, nowSnap],
     });
 
     await persistDataDiff(prevData, last.data);
+    get().syncMirrorToFocus();
   },
 
+  redo: async () => {
+    const { historyPast, historyFuture } = get();
+    if (historyFuture.length === 0) return;
+
+    const prevData = get().data; // DB diff용
+    const next = historyFuture[historyFuture.length - 1]; // 적용할 스냅샷
+    const nowSnap = makeSnapshot(get()); // 현재 상태는 past에 쌓기
+
+    set({
+      data: next.data,
+      selection: next.selection,
+      focus: next.focus ?? null,
+      isSelecting: false,
+      anchor: null,
+      head: null,
+      editing: null,
+      historyPast: [...historyPast, nowSnap],
+      historyFuture: historyFuture.slice(0, historyFuture.length - 1),
+    });
+
+    await persistDataDiff(prevData, next.data);
+    get().syncMirrorToFocus();
+  },
+
+  // formula
   formulaMirror: "",
 
   setFormulaInput: (v) =>

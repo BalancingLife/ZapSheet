@@ -36,6 +36,7 @@ export default function Sheet() {
   const pasteGridFromSelection = useSheetStore((s) => s.pasteGridFromSelection);
 
   const undo = useSheetStore((s) => s.undo);
+  const redo = useSheetStore((s) => s.redo);
 
   const selectAll = useSheetStore((s) => s.selectAll);
 
@@ -190,7 +191,16 @@ export default function Sheet() {
         return;
       }
 
-      // 11) Ctrl/Cmd + A : 시트 전체 선택
+      // 11) Ctrl/Cmd + Y : 다시실행 (Redo)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        redo();
+        return;
+      }
+
+      // 12) Ctrl/Cmd + A : 시트 전체 선택
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
         e.preventDefault();
         e.stopPropagation();

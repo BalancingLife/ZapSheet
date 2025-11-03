@@ -1,8 +1,28 @@
 .toolBarConatiner {
   display: flex;
 
-  gap: 10px;
+  gap: 3px;
   background-color: #f0f4f9;
-  padding: 13px 15px;
+  padding: 7px 10px;
   border-radius: 10px;
+}
+
+.undoIcon {
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.undoIcon:hover {
+  background: #e0e7ff;
+}
+
+.redoIcon {
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.redoIcon:hover {
+  background: #e0e7ff;
 }
