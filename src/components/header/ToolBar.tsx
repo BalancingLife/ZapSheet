@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import styles from "./ToolBar.module.css";
 import { useSheetStore } from "../sheet/store/useSheetStore";
 
@@ -8,18 +9,34 @@ export default function ToolBar() {
   const fontSize = useSheetStore((s) => s.getFontSizeForFocus());
   const setFontSize = useSheetStore((s) => s.setFontSize);
 
+  // 로컬 상태로 입력 중인 값 관리
+  const [tempFontSize, setTempFontSize] = useState<string>(String(fontSize));
+
+  useEffect(() => {
+    setTempFontSize(String(fontSize));
+  }, [fontSize]);
+
   const apply = (next: number) => {
-    // Number 보정만 해주면 나머지(반올림/클램프)는 slice가 처리
     const n = Number(next);
     if (Number.isNaN(n)) return;
     setFontSize(n);
+    // 적용 후 input도 반영 (useEffect로도 동기화되지만 즉시 반영해 깜빡임 방지)
+    setTempFontSize(String(n));
   };
 
   const stepDown = () => apply(fontSize - 1);
   const stepUp = () => apply(fontSize + 1);
 
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    apply(Number(e.target.value));
+    setTempFontSize(e.target.value); // 입력만 저장
+  };
+
+  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === "Enter") {
+      const raw = tempFontSize.trim();
+      if (raw === "") return; // 빈 값은 무시
+      apply(Number(raw)); // 엔터로 확정 적용
+    }
   };
 
   return (
@@ -38,8 +55,9 @@ export default function ToolBar() {
         </button>
         <input
           className={styles.sizeInput}
-          value={fontSize}
+          value={tempFontSize}
           onChange={onInputChange}
+          onKeyDown={onKeyDown}
         />
         <button className={styles.btn} onClick={stepUp} title="크게">
           +
