@@ -975,75 +975,66 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     return get().getFontSize(f.row, f.col);
   },
 
-  setFontSize: async (next) => {
+  setFontSize: (next) => {
     const n = Math.round(clamp(next, 0, 72));
 
-    // 2) 타겟 셀 집합: selection 있으면 그 범위, 없으면 focus 1칸
     const sel = get().selection;
     const focus = get().focus;
     const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
-
     if (targets.length === 0) return;
 
-    // 3) 한번에 갱신(단일 set)
+    // 1) stylesByCell 즉시 갱신 (동기)
     const map = { ...get().stylesByCell };
     for (const { row, col } of targets) {
       const key = keyOf(row, col);
       const prev = map[key] ?? {};
       map[key] = { ...prev, fontSize: n };
     }
-
     set({ stylesByCell: map });
-    // 2) Supabase upsert (배치)
-    await withUserId(async (uid) => {
-      const { sheetId } = get();
-      const rows = targets.map(({ row, col }) => ({
-        user_id: uid,
-        sheet_id: sheetId,
-        row,
-        col,
-        style_json: map[keyOf(row, col)],
-        updated_at: new Date().toISOString(),
-      }));
 
-      const { error } = await supabase
-        .from("cell_styles")
-        .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
-
-      if (error) console.error("cell_styles upsert 실패:", error);
-    });
-
+    // 2) 행 높이 즉시 재계산 (동기) — ★ await 전에!
     const { rowHeights, manualRowFlags, setRowHeight } = get();
-
-    // 변경된 행들만 추출
     const affectedRows = [...new Set(targets.map((t) => t.row))];
-
     for (const r of affectedRows) {
-      // 수동 조정된 행은 건너뜀
       if (manualRowFlags[r]) continue;
 
-      // 현재 행의 모든 셀에서 최대 폰트 크기 찾기
       let maxFont = DEFAULT_FONT_SIZE;
       for (let c = 0; c < COLUMN_COUNT; c++) {
         const style = map[keyOf(r, c)];
-        if (style?.fontSize && style.fontSize > maxFont) {
+        if (style?.fontSize && style.fontSize > maxFont)
           maxFont = style.fontSize;
-        }
       }
 
-      // 목표 높이 계산
       const desiredHeight = Math.max(
         DEFAULT_ROW_HEIGHT,
         Math.round(maxFont * FONT_SIZE_TO_ROW_RATIO)
       );
 
-      // 높이가 이미 비슷하면 생략 (불필요한 set 방지)
       if (Math.abs(rowHeights[r] - desiredHeight) > 1) {
         setRowHeight(r, desiredHeight);
       }
     }
-  },
 
+    // 3) 저장은 비차단으로 뒤로 보냄 (레이아웃 확정 후)
+    void (async () => {
+      await withUserId(async (uid) => {
+        const { sheetId } = get();
+        const rows = targets.map(({ row, col }) => ({
+          user_id: uid,
+          sheet_id: sheetId,
+          row,
+          col,
+          style_json: map[keyOf(row, col)],
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase
+          .from("cell_styles")
+          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+        if (error) console.error("cell_styles upsert 실패:", error);
+      });
+    })();
+  },
   loadCellStyles: async () => {
     await withUserId(async (uid) => {
       const { sheetId } = get();
