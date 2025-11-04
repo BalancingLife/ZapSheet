@@ -16,6 +16,7 @@ import {
 } from "../SheetConstants";
 
 // --------- types ---------
+export type SheetMeta = { id: string; name: string };
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
@@ -197,6 +198,16 @@ type StyleSlice = {
   clearSelectionBorders: (mode?: BorderApplyMode) => Promise<void> | void;
 };
 
+type SheetListSlice = {
+  sheets: SheetMeta[];
+  currentSheetId: string | null;
+
+  addSheet: (name?: string) => void;
+  setCurrentSheet: (id: string) => void;
+  renameSheet: (id: string, newName: string) => void;
+  removeSheet: (id: string) => void;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -207,7 +218,8 @@ type SheetState = LayoutSlice &
   ClipboardSlice &
   HistorySlice &
   FormulaSlice &
-  StyleSlice;
+  StyleSlice &
+  SheetListSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -637,6 +649,20 @@ export function useBorderCss(row: number, col: number): React.CSSProperties {
     } as React.CSSProperties;
   }, [row, col, selfStyle, topStyle, leftStyle, isLastCol, isLastRow]);
 }
+
+// sheetSlice
+const genId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `sheet-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const nextSheetName = (existing: string[]) => {
+  // Sheet1, Sheet2 ... 중 빈 번호를 찾아 부여
+  let n = 1;
+  const set = new Set(existing);
+  while (set.has(`Sheet${n}`)) n += 1;
+  return `Sheet${n}`;
+};
 
 // ==============================
 // ------- store create ---------
@@ -1598,5 +1624,53 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           console.error("cell_styles border clear delete 실패:", error);
       }
     });
+  },
+
+  // ---- SheetListSlice ----
+  sheets: [{ id: "sheet-1", name: "Sheet1" }],
+  currentSheetId: "sheet-1",
+
+  // --- SheetListSlice actions ---
+  addSheet: (name) => {
+    const { sheets } = get();
+    const id = genId();
+    const newName = name ?? nextSheetName(sheets.map((s) => s.name));
+    const newSheets = [...sheets, { id, name: newName }];
+    set({ sheets: newSheets, currentSheetId: id });
+  },
+
+  setCurrentSheet: (id) => {
+    // 존재하는 시트만 선택
+    const exists = get().sheets.some((s) => s.id === id);
+    if (!exists) return;
+    set({ currentSheetId: id });
+  },
+
+  renameSheet: (id, newName) => {
+    if (!newName?.trim()) return;
+    set((state) => ({
+      sheets: state.sheets.map((s) =>
+        s.id === id ? { ...s, name: newName } : s
+      ),
+    }));
+  },
+
+  removeSheet: (id) => {
+    const { sheets, currentSheetId } = get();
+    if (sheets.length <= 1) return; // 마지막 1개는 보호
+
+    const idx = sheets.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+
+    const newSheets = sheets.filter((s) => s.id !== id);
+
+    // 현재 시트를 지우면, 인접 시트로 포커스 이동
+    let newCurrent = currentSheetId;
+    if (currentSheetId === id) {
+      const neighbor = newSheets[Math.max(0, idx - 1)] ?? newSheets[0] ?? null;
+      newCurrent = neighbor ? neighbor.id : null;
+    }
+
+    set({ sheets: newSheets, currentSheetId: newCurrent });
   },
 }));

@@ -1,28 +1,109 @@
 .container {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-left: 25px;
+  padding: 6px 8px;
+  border-top: 1px solid #e9eef3;
+  background: #fafbfd; /* ZapSheet 톤 */
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: #fff;
+  cursor: pointer;
+}
+.iconBtn:hover {
+  background: #f5f7fa;
+}
+
+.sheetList {
   display: flex;
   align-items: center;
-  padding-left: 40px;
-  background-color: white;
+  gap: 6px;
+  overflow: auto;
+  padding: 2px;
 }
 
-.plus {
-  padding: 7px;
-  border-radius: 25%;
-  margin-right: 5px;
-}
-
-.plus:hover {
-  background-color: rgb(231, 231, 231);
+/* 탭 스타일 */
+.sheetItem {
+  flex: 0 0 auto;
+  max-width: 180px;
+  min-width: 88px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #e6eaef;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
+  user-select: none;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+}
+.sheetItem:hover {
+  background: #f9fbff;
+}
+.active {
+  border-color: #8fdb8f; /* 녹계열 */
+  box-shadow: 0 0 0 2px rgba(143, 219, 143, 0.2);
 }
 
-.hamburger {
-  padding: 7px;
-  border-radius: 25%;
-  margin-right: 15px;
+.sheetName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.hamburger:hover {
-  background-color: rgb(231, 231, 231);
+/* 리네임 인풋 */
+.renameInput {
+  width: 100%;
+  height: 20px;
+  border: 1px solid #cdd6e1;
+  border-radius: 4px;
+  padding: 0 6px;
+  outline: none;
+}
+.renameInput:focus {
+  border-color: #79c779;
+  box-shadow: 0 0 0 2px rgba(121, 199, 121, 0.2);
+}
+
+/* 컨텍스트 메뉴 */
+.ctxMenu {
+  position: fixed;
+  z-index: 1000;
+  background: #fff;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 140px;
+}
+.ctxItem,
+.ctxItemDanger {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 13px;
+}
+.ctxItem:hover {
+  background: #f3f6fa;
+}
+.ctxItemDanger {
+  color: #c0392b;
+}
+.ctxItemDanger:hover {
+  background: #fdeeed;
 }
