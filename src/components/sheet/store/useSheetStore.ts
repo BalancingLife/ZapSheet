@@ -1045,9 +1045,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       // Zustand 상태에 반영
       set({ data: obj });
+      console.log("[loadCellData]", {
+        sheetId: get().sheetId,
+        rows: data?.length,
+      });
     });
   },
-  clearData: () => set({ data: {} }),
+  clearData: () => {
+    // 디버깅 로그
+    console.warn("[clearData] called. stack=", new Error().stack);
+    set({ data: {} });
+  },
 
   clearSelectionCells: async () => {
     const sel = get().selection;
