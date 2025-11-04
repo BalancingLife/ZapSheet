@@ -6,6 +6,9 @@ export default function ToolBar() {
   const applyStyleToSelection = useSheetStore((s) => s.applyStyleToSelection);
   const clearSelectionStyles = useSheetStore((s) => s.clearSelectionStyles);
 
+  const applyBorderToSelection = useSheetStore((s) => s.applyBorderToSelection);
+  const clearSelectionBorders = useSheetStore((s) => s.clearSelectionBorders);
+
   const focus = useSheetStore((s) => s.focus);
   const undo = useSheetStore((s) => s.undo);
   const redo = useSheetStore((s) => s.redo);
@@ -102,6 +105,25 @@ export default function ToolBar() {
     toggleUnderline,
   ]);
 
+  // ====== 테두리(보더) UI 상태 ======
+  const [borderColor, setBorderColor] = useState<string>("#222222");
+  const [borderWidth, setBorderWidth] = useState<number>(1);
+  const [borderStyle, setBorderStyle] = useState<"solid" | "dashed" | "dotted">(
+    "solid"
+  );
+
+  const applyBorder = (mode: "outline" | "inner" | "all") => {
+    applyBorderToSelection(mode, {
+      color: borderColor,
+      width: borderWidth,
+      style: borderStyle,
+    });
+  };
+
+  const clearBorder = (mode?: "outline" | "inner" | "all") => {
+    clearSelectionBorders(mode);
+  };
+
   return (
     <div className={styles.toolBarConatiner}>
       <div className={styles.undoIcon} onClick={undo}>
@@ -131,7 +153,7 @@ export default function ToolBar() {
 
       <div className={styles.vDivider} />
 
-      {/* ✅ 텍스트 스타일: B I U */}
+      {/*  텍스트 스타일: B I U */}
       <div className={styles.textStyleGroup}>
         <button
           className={`${styles.toggleBtn} ${isBold ? styles.active : ""} ${
@@ -193,7 +215,83 @@ export default function ToolBar() {
         <button onClick={resetBgColor}>Reset</button>
       </div>
 
-      <div>테두리</div>
+      {/* ===== 테두리 ===== */}
+      <div className={styles.borderGroup}>
+        <span className={styles.sectionTitle}>테두리</span>
+
+        <label className={styles.borderField}>
+          <span>색</span>
+          <input
+            type="color"
+            value={borderColor}
+            onChange={(e) => setBorderColor(e.target.value)}
+            title="테두리 색상"
+          />
+        </label>
+
+        <label className={styles.borderField}>
+          <span>두께</span>
+          <input
+            className={styles.borderWidthInput}
+            type="number"
+            min={0}
+            max={8}
+            value={borderWidth}
+            onChange={(e) => setBorderWidth(Number(e.target.value))}
+            title="px"
+          />
+        </label>
+
+        <label className={styles.borderField}>
+          <span>스타일</span>
+          <select
+            className={styles.borderStyleSelect}
+            value={borderStyle}
+            onChange={(e) =>
+              setBorderStyle(e.target.value as "solid" | "dashed" | "dotted")
+            }
+            title="선 스타일"
+          >
+            <option value="solid">실선</option>
+            <option value="dashed">파선</option>
+            <option value="dotted">점선</option>
+          </select>
+        </label>
+
+        <div className={styles.borderButtons}>
+          <button
+            className={styles.borderBtn}
+            onClick={() => applyBorder("outline")}
+            title="외곽선 적용"
+          >
+            외곽
+          </button>
+          <button
+            className={styles.borderBtn}
+            onClick={() => applyBorder("inner")}
+            title="내부선 적용"
+          >
+            내부
+          </button>
+          <button
+            className={styles.borderBtn}
+            onClick={() => applyBorder("all")}
+            title="전체선 적용"
+          >
+            전체
+          </button>
+
+          <div className={styles.vDividerThin} />
+
+          <button
+            className={`${styles.borderBtn} ${styles.danger}`}
+            onClick={() => clearBorder()}
+            title="모든 테두리 지우기"
+          >
+            지우기
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

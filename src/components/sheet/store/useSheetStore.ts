@@ -1,3 +1,4 @@
+import React from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -26,7 +27,26 @@ export type CellStyle = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  border?: CellBorder;
 };
+
+export type BorderLineStyle = "solid" | "dashed" | "dotted";
+
+export type BorderSpec = {
+  color?: string;
+  width?: number;
+  style?: BorderLineStyle;
+};
+
+export type CellBorder = {
+  top?: BorderSpec;
+  right?: BorderSpec;
+  bottom?: BorderSpec;
+  left?: BorderSpec;
+};
+
+type BorderApplyMode = "outline" | "all" | "inner";
+
 // --------- Slice ---------
 
 // UI 상태
@@ -169,6 +189,12 @@ type StyleSlice = {
   getCellStyle: (row: number, col: number) => CellStyle | undefined;
   applyStyleToSelection: (patch: Partial<CellStyle>) => Promise<void> | void;
   clearSelectionStyles: (keys?: (keyof CellStyle)[]) => Promise<void> | void;
+
+  applyBorderToSelection: (
+    mode: BorderApplyMode,
+    spec: BorderSpec
+  ) => Promise<void> | void;
+  clearSelectionBorders: (mode?: BorderApplyMode) => Promise<void> | void;
 };
 
 type SheetState = LayoutSlice &
@@ -508,6 +534,108 @@ function makeSnapshot(s: SheetState) {
     selection: s.selection ? { ...s.selection } : null,
     focus: s.focus ? { ...s.focus } : null,
   };
+}
+
+// 테두리
+
+function normBorder(b?: BorderSpec): Required<BorderSpec> | null {
+  if (!b) return null;
+  return {
+    color: b.color ?? "#222",
+    width: Math.max(0, Math.round(b.width ?? 1)),
+    style: b.style ?? "solid",
+  };
+}
+
+function cssFrom(b?: BorderSpec): string | undefined {
+  const n = normBorder(b);
+  return n ? `${n.width}px ${n.style} ${n.color}` : undefined;
+}
+
+// 이웃 보정: 없으면 이웃의 반대 변을 가져온다
+function resolveEdge(
+  row: number,
+  col: number,
+  edge: "top" | "left" | "right" | "bottom",
+  getStyle: (r: number, c: number) => CellStyle | undefined
+): BorderSpec | undefined {
+  const me = getStyle(row, col);
+  const mine = me?.border?.[edge];
+
+  if (mine) return mine;
+
+  if (edge === "top" && row > 0) {
+    return getStyle(row - 1, col)?.border?.bottom;
+  }
+  if (edge === "left" && col > 0) {
+    return getStyle(row, col - 1)?.border?.right;
+  }
+  // 오른/아래는 기본적으로 이웃 보정하지 않음(마지막 행/열에서만 렌더)
+  return undefined;
+}
+
+/**
+ * 셀 보더 CSS를 계산해 반환.
+ * 규칙:
+ *  - 항상 top/left를 그림(없으면 위/왼 이웃의 bottom/right를 승계)
+ *  - 마지막 열에서만 right를 그림, 마지막 행에서만 bottom을 그림
+ *  - 이렇게 하면 이중 선 방지됨
+ */
+export function getBorderCss(row: number, col: number): React.CSSProperties {
+  const s = useSheetStore.getState();
+  const getStyle = (r: number, c: number) => s.getCellStyle(r, c);
+
+  const isLastCol = col === COLUMN_COUNT - 1;
+  const isLastRow = row === ROW_COUNT - 1;
+
+  const top = resolveEdge(row, col, "top", getStyle);
+  const left = resolveEdge(row, col, "left", getStyle);
+  const right = isLastCol ? s.getCellStyle(row, col)?.border?.right : undefined;
+  const bottom = isLastRow
+    ? s.getCellStyle(row, col)?.border?.bottom
+    : undefined;
+
+  return {
+    borderTop: cssFrom(top),
+    borderLeft: cssFrom(left),
+    borderRight: cssFrom(right),
+    borderBottom: cssFrom(bottom),
+  };
+}
+
+export function useBorderCss(row: number, col: number): React.CSSProperties {
+  // 이 3가지만 구독하면 이웃 보정도 바로 반영됨
+  const selfStyle = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
+  const topStyle = useSheetStore((s) =>
+    row > 0 ? s.stylesByCell[`${row - 1}:${col}`] : undefined
+  );
+  const leftStyle = useSheetStore((s) =>
+    col > 0 ? s.stylesByCell[`${row}:${col - 1}`] : undefined
+  );
+
+  const isLastCol = col === COLUMN_COUNT - 1;
+  const isLastRow = row === ROW_COUNT - 1;
+
+  return React.useMemo(() => {
+    const getStyle = (r: number, c: number) => {
+      if (r === row && c === col) return selfStyle;
+      if (r === row - 1 && c === col) return topStyle;
+      if (r === row && c === col - 1) return leftStyle;
+      return undefined;
+    };
+
+    const topSpec = resolveEdge(row, col, "top", getStyle);
+    const leftSpec = resolveEdge(row, col, "left", getStyle);
+    const rightSpec = isLastCol ? selfStyle?.border?.right : undefined;
+    const bottomSpec = isLastRow ? selfStyle?.border?.bottom : undefined;
+
+    return {
+      borderTop: cssFrom(topSpec),
+      borderLeft: cssFrom(leftSpec),
+      borderRight: cssFrom(rightSpec),
+      borderBottom: cssFrom(bottomSpec),
+    } as React.CSSProperties;
+  }, [row, col, selfStyle, topStyle, leftStyle, isLastCol, isLastRow]);
 }
 
 // ==============================
@@ -1257,6 +1385,218 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         map[keyOf(rec.row, rec.col)] = rec.style_json as CellStyle;
       }
       set({ stylesByCell: map });
+    });
+  },
+  applyBorderToSelection: async (mode, spec) => {
+    get().pushHistory();
+
+    const sel = get().selection;
+    const focus = get().focus;
+    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    if (targets.length === 0) return;
+
+    const map = { ...get().stylesByCell };
+
+    // 선택 박스 경계(있으면) 계산
+    const box: Rect | null = sel
+      ? { ...sel }
+      : focus
+      ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
+      : null;
+
+    const touch: Array<{ row: number; col: number }> = [];
+
+    const applyEdge = (row: number, col: number, edge: keyof CellBorder) => {
+      const k = keyOf(row, col);
+      const prev = map[k] ?? {};
+      const prevBorder: CellBorder = { ...(prev.border ?? {}) };
+      prevBorder[edge] = { ...spec };
+      map[k] = { ...prev, border: prevBorder };
+      touch.push({ row, col });
+    };
+
+    if (!box) return;
+
+    for (const { row, col } of targets) {
+      const onTop = row === box.sr;
+      const onBottom = row === box.er;
+      const onLeft = col === box.sc;
+      const onRight = col === box.ec;
+
+      if (mode === "all") {
+        applyEdge(row, col, "top");
+        applyEdge(row, col, "bottom");
+        applyEdge(row, col, "left");
+        applyEdge(row, col, "right");
+        continue;
+      }
+
+      if (mode === "outline") {
+        if (onTop) applyEdge(row, col, "top");
+        if (onBottom) applyEdge(row, col, "bottom");
+        if (onLeft) applyEdge(row, col, "left");
+        if (onRight) applyEdge(row, col, "right");
+        continue;
+      }
+
+      if (mode === "inner") {
+        // 내부 경계: 상/하/좌/우 중 "박스 내부측"에 있는 변만
+        if (!onTop) applyEdge(row, col, "top");
+        if (!onBottom) applyEdge(row, col, "bottom");
+        if (!onLeft) applyEdge(row, col, "left");
+        if (!onRight) applyEdge(row, col, "right");
+        continue;
+      }
+    }
+
+    // 로컬 반영
+    set({ stylesByCell: map });
+
+    // 비차단 저장
+    void withUserId(async (uid) => {
+      const { sheetId } = get();
+      const rows = [
+        ...new Set(touch.map(({ row, col }) => `${row}:${col}`)),
+      ].map((k) => {
+        const [r, c] = k.split(":").map(Number);
+        return {
+          user_id: uid,
+          sheet_id: sheetId,
+          row: r,
+          col: c,
+          style_json: map[k],
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      const { error } = await supabase
+        .from("cell_styles")
+        .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+      if (error) console.error("cell_styles border upsert 실패:", error);
+    });
+  },
+
+  clearSelectionBorders: async (mode) => {
+    get().pushHistory();
+
+    const sel = get().selection;
+    const focus = get().focus;
+    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    if (targets.length === 0) return;
+
+    const mapPrev = get().stylesByCell;
+    const map: Record<string, CellStyle> = { ...mapPrev };
+
+    const box: Rect | null = sel
+      ? { ...sel }
+      : focus
+      ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
+      : null;
+
+    const touchUpsert: Array<{ row: number; col: number; style: CellStyle }> =
+      [];
+    const touchDelete: Array<{ row: number; col: number }> = [];
+
+    const clearEdge = (row: number, col: number, edge: keyof CellBorder) => {
+      const k = keyOf(row, col);
+      const cur = map[k];
+      if (!cur?.border) return;
+
+      const nextBorder: CellBorder = { ...cur.border };
+      delete nextBorder[edge];
+
+      // border 객체가 비면 제거
+      if (
+        !nextBorder.top &&
+        !nextBorder.right &&
+        !nextBorder.bottom &&
+        !nextBorder.left
+      ) {
+        const next: CellStyle = { ...cur };
+        delete next.border;
+
+        if (Object.keys(next).length === 0) {
+          delete map[k]; // 완전 빈 스타일이면 엔트리 제거
+          touchDelete.push({ row, col });
+        } else {
+          map[k] = next;
+          touchUpsert.push({ row, col, style: next });
+        }
+      } else {
+        map[k] = { ...cur, border: nextBorder };
+        touchUpsert.push({ row, col, style: map[k] });
+      }
+    };
+
+    if (!box) return;
+
+    for (const { row, col } of targets) {
+      const onTop = row === box.sr;
+      const onBottom = row === box.er;
+      const onLeft = col === box.sc;
+      const onRight = col === box.ec;
+
+      if (!mode) {
+        // 전체 보더 제거
+        ["top", "bottom", "left", "right"].forEach((e) =>
+          clearEdge(row, col, e as keyof CellBorder)
+        );
+        continue;
+      }
+
+      if (mode === "all") {
+        ["top", "bottom", "left", "right"].forEach((e) =>
+          clearEdge(row, col, e as keyof CellBorder)
+        );
+      } else if (mode === "outline") {
+        if (onTop) clearEdge(row, col, "top");
+        if (onBottom) clearEdge(row, col, "bottom");
+        if (onLeft) clearEdge(row, col, "left");
+        if (onRight) clearEdge(row, col, "right");
+      } else if (mode === "inner") {
+        if (!onTop) clearEdge(row, col, "top");
+        if (!onBottom) clearEdge(row, col, "bottom");
+        if (!onLeft) clearEdge(row, col, "left");
+        if (!onRight) clearEdge(row, col, "right");
+      }
+    }
+
+    // 로컬 적용
+    set({ stylesByCell: map });
+
+    // 비차단 저장(업서트/삭제 분리)
+    void withUserId(async (uid) => {
+      const { sheetId } = get();
+
+      if (touchUpsert.length > 0) {
+        const rows = touchUpsert.map(({ row, col, style }) => ({
+          user_id: uid,
+          sheet_id: sheetId,
+          row,
+          col,
+          style_json: style,
+          updated_at: new Date().toISOString(),
+        }));
+        const { error } = await supabase
+          .from("cell_styles")
+          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+        if (error)
+          console.error("cell_styles border clear upsert 실패:", error);
+      }
+
+      if (touchDelete.length > 0) {
+        const orClauses = touchDelete.map(
+          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+        );
+        const { error } = await supabase
+          .from("cell_styles")
+          .delete()
+          .eq("user_id", uid)
+          .eq("sheet_id", sheetId)
+          .or(orClauses.join(","));
+        if (error)
+          console.error("cell_styles border clear delete 실패:", error);
+      }
     });
   },
 }));

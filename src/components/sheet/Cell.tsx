@@ -3,6 +3,7 @@ import styles from "./Cell.module.css";
 import { useSheetStore } from "./store/useSheetStore";
 import { formatWithComma, isNumericValue } from "@/utils/numberFormat";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";
+import { useBorderCss } from "./store/useSheetStore";
 
 type CellProps = {
   row: number;
@@ -50,6 +51,7 @@ function Cell({ row, col }: CellProps) {
   const alignClass = numeric ? styles.alignBottomRight : styles.alignBottomLeft;
 
   const style = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
+  const borderCss = useBorderCss(row, col);
 
   useEffect(() => {
     if (isFocused && isEditing && editingSource === "cell") {
@@ -167,6 +169,7 @@ function Cell({ row, col }: CellProps) {
         isFocused ? styles.focused : ""
       } ${isSelected ? "selected" : ""}`}
       style={{
+        ...borderCss,
         color: style?.textColor,
         backgroundColor: style?.bgColor,
         fontSize: `${fontSize}px`,
