@@ -128,6 +128,7 @@ type DataSlice = {
   loadCellData: () => Promise<void>;
   clearData: () => void;
   clearSelectionCells: () => Promise<void>;
+  resetSheetState: () => void;
 };
 
 type ClipboardSlice = {
@@ -206,6 +207,7 @@ type SheetListSlice = {
   setCurrentSheet: (id: string) => void;
   renameSheet: (id: string, newName: string) => void;
   removeSheet: (id: string) => void;
+  loadSheetsMeta: () => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -418,50 +420,41 @@ async function persistDataDiff(
   oldData: Record<string, string>,
   newData: Record<string, string>
 ) {
-  // 변경/삭제 목록 계산
   const toUpsert: Array<{ row: number; col: number; value: string }> = [];
   const toDelete: Array<{ row: number; col: number }> = [];
 
-  // 비교해야 할 셀 좌표(key) 전부 모으기
   const keySet = new Set<string>([
     ...Object.keys(oldData),
     ...Object.keys(newData),
   ]);
-
   for (const k of keySet) {
     const before = oldData[k] ?? "";
     const after = newData[k] ?? "";
     if (before === after) continue;
-
-    const [r, c] = k.split(":").map((x) => parseInt(x, 10)); // "5:3" → [5, 3]
-
-    if (after === "" || after == null) {
-      // 값이 빈 문자열로 바뀐 경우 → 삭제
-      toDelete.push({ row: r, col: c });
-    } else {
-      // 그 외 변경 → upsert
-      toUpsert.push({ row: r, col: c, value: after });
-    }
+    const [r, c] = k.split(":").map((x) => parseInt(x, 10));
+    if (!after) toDelete.push({ row: r, col: c });
+    else toUpsert.push({ row: r, col: c, value: after });
   }
-
   if (toUpsert.length === 0 && toDelete.length === 0) return;
 
   await withUserId(async (uid) => {
-    // 1) upsert
+    const { sheetId } = useSheetStore.getState();
+    if (!sheetId) return;
+
     if (toUpsert.length > 0) {
-      const payload = toUpsert.map((c) => ({
-        row: c.row,
-        col: c.col,
-        value: c.value,
+      const payload = toUpsert.map(({ row, col, value }) => ({
         user_id: uid,
+        sheet_id: sheetId,
+        row,
+        col,
+        value,
       }));
       const { error } = await supabase
         .from("cells")
-        .upsert(payload, { onConflict: "row,col,user_id" });
-      if (error) console.error("undo upsert 실패:", error);
+        .upsert(payload, { onConflict: "user_id,sheet_id,row,col" });
+      if (error) console.error("undo/redo upsert 실패:", error);
     }
 
-    // 2) delete
     if (toDelete.length > 0) {
       const orClauses = toDelete.map(
         ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
@@ -470,8 +463,9 @@ async function persistDataDiff(
         .from("cells")
         .delete()
         .eq("user_id", uid)
+        .eq("sheet_id", sheetId)
         .or(orClauses.join(","));
-      if (error) console.error("undo delete 실패:", error);
+      if (error) console.error("undo/redo delete 실패:", error);
     }
   });
 }
@@ -986,8 +980,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   cancelEdit: () => set({ editing: null }),
 
   commitEdit: async (value) => {
-    const { editing, clearSelection } = get();
-    if (!editing) return;
+    const { editing, clearSelection, sheetId } = get();
+    if (!editing || !sheetId) return;
 
     get().pushHistory();
 
@@ -1004,10 +998,13 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     // DB 반영
     await withUserId(async (uid) => {
-      const { error } = await supabase.from("cells").upsert(
-        [{ row, col, value, user_id: uid }],
-        { onConflict: "row,col,user_id" } // 수정 가능하게 한 코드
-      );
+      const { sheetId } = get();
+
+      const { error } = await supabase
+        .from("cells")
+        .upsert([{ row, col, value, user_id: uid, sheet_id: sheetId }], {
+          onConflict: "sheet_id,row,col,user_id",
+        });
       if (error) console.error(" Supabase 저장 실패:", error);
       else console.log(`저장됨: (${row}, ${col}) → ${value}`);
     });
@@ -1021,19 +1018,34 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // Supabase에서 data 불러오기
   loadCellData: async () => {
-    const { data, error } = await supabase.from("cells").select("*");
-    if (error) {
-      console.error("데이터 불러오기 실패", error);
-      return;
-    }
+    await withUserId(async (uid) => {
+      const { sheetId } = get();
+      if (!sheetId) return;
 
-    // Supabase의 각 행(row,col,value) 을  key: `${row}:${col}` 형태로 변환
-    const obj: Record<string, string> = {};
-    for (const cell of data) {
-      obj[`${cell.row}:${cell.col}`] = cell.value;
-    }
-    // Zustand 상태에 반영
-    set({ data: obj });
+      const { data, error } = await supabase
+        .from("cells")
+        .select("row,col,value")
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId);
+
+      if (error) {
+        console.error("데이터 불러오기 실패", error);
+        return;
+      }
+
+      //  빈 배열일 때 굳이 {}로 덮어쓰고 깜빡임 유발할 필요가 없으면 early return
+      if (!data || data.length === 0) {
+        return;
+      }
+
+      // Supabase의 각 행(row,col,value) 을  key: `${row}:${col}` 형태로 변환
+      const obj: Record<string, string> = {};
+      for (const cell of data ?? [])
+        obj[`${cell.row}:${cell.col}`] = cell.value ?? "";
+
+      // Zustand 상태에 반영
+      set({ data: obj });
+    });
   },
   clearData: () => set({ data: {} }),
 
@@ -1051,6 +1063,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     // DB
     await withUserId(async (uid) => {
+      const { sheetId } = get();
       const orClauses = targets.map(
         ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
       );
@@ -1058,10 +1071,25 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         .from("cells")
         .delete()
         .eq("user_id", uid)
+        .eq("sheet_id", sheetId)
         .or(orClauses.join(","));
       if (error) console.error("clearSelectionCells 삭제 실패:", error);
     });
   },
+
+  resetSheetState: () =>
+    set({
+      data: {},
+      stylesByCell: {},
+      historyPast: [],
+      historyFuture: [],
+      formulaMirror: "",
+      selection: null,
+      isSelecting: false,
+      anchor: null,
+      head: null,
+      focus: { row: 0, col: 0 },
+    }),
 
   // ====== Clipboard Slice ======
   clipboard: null,
@@ -1627,50 +1655,135 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   // ---- SheetListSlice ----
-  sheets: [{ id: "sheet-1", name: "Sheet1" }],
-  currentSheetId: "sheet-1",
+  sheets: [{ id: "default", name: "Sheet1" }],
+  currentSheetId: "default",
 
   // --- SheetListSlice actions ---
-  addSheet: (name) => {
-    const { sheets } = get();
-    const id = genId();
-    const newName = name ?? nextSheetName(sheets.map((s) => s.name));
-    const newSheets = [...sheets, { id, name: newName }];
-    set({ sheets: newSheets, currentSheetId: id });
+  addSheet: async (name) => {
+    await withUserId(async (uid) => {
+      const { sheets } = get();
+      const id = genId();
+      const newName = name ?? nextSheetName(sheets.map((s) => s.name));
+      const order = sheets.length ? sheets.length : 0;
+
+      const { error } = await supabase
+        .from("sheets_meta")
+        .insert({ user_id: uid, sheet_id: id, name: newName, order });
+      if (error) {
+        console.error("addSheet 실패:", error);
+        return;
+      }
+
+      const newSheets = [...sheets, { id, name: newName }];
+      set({ sheets: newSheets });
+      get().setCurrentSheet(id);
+    });
   },
 
   setCurrentSheet: (id) => {
     // 존재하는 시트만 선택
     const exists = get().sheets.some((s) => s.id === id);
     if (!exists) return;
-    set({ currentSheetId: id });
+    // 1) 현재 시트 아이디 동기화
+    set({ currentSheetId: id, sheetId: id });
+
+    // 2) 로컬 초기화
+    set({ data: {}, stylesByCell: {} });
+
+    // 3) 시트별 리소스 로드
+    void (async () => {
+      await Promise.all([
+        get().loadLayout(),
+        get().loadCellData(),
+        get().loadCellStyles(),
+      ]);
+      get().syncMirrorToFocus();
+    })();
   },
 
-  renameSheet: (id, newName) => {
+  renameSheet: async (id, newName) => {
     if (!newName?.trim()) return;
-    set((state) => ({
-      sheets: state.sheets.map((s) =>
-        s.id === id ? { ...s, name: newName } : s
-      ),
-    }));
+    await withUserId(async (uid) => {
+      const { error } = await supabase
+        .from("sheets_meta")
+        .update({ name: newName, updated_at: new Date().toISOString() })
+        .eq("user_id", uid)
+        .eq("sheet_id", id);
+      if (error) {
+        console.error("renameSheet 실패:", error);
+        return;
+      }
+      set((state) => ({
+        sheets: state.sheets.map((s) =>
+          s.id === id ? { ...s, name: newName } : s
+        ),
+      }));
+    });
   },
 
-  removeSheet: (id) => {
-    const { sheets, currentSheetId } = get();
+  removeSheet: async (id) => {
+    const { sheets } = get();
     if (sheets.length <= 1) return; // 마지막 1개는 보호
 
-    const idx = sheets.findIndex((s) => s.id === id);
-    if (idx === -1) return;
+    await withUserId(async (uid) => {
+      // 1) 서버 메타 삭제
+      const { error } = await supabase
+        .from("sheets_meta")
+        .delete()
+        .eq("user_id", uid)
+        .eq("sheet_id", id);
+      if (error) {
+        console.error("removeSheet 실패:", error);
+        return;
+      }
 
-    const newSheets = sheets.filter((s) => s.id !== id);
+      // 2) 클라이언트 목록 갱신
+      const idxRemoved = sheets.findIndex((s) => s.id === id);
+      if (idxRemoved === -1) return;
 
-    // 현재 시트를 지우면, 인접 시트로 포커스 이동
-    let newCurrent = currentSheetId;
-    if (currentSheetId === id) {
-      const neighbor = newSheets[Math.max(0, idx - 1)] ?? newSheets[0] ?? null;
-      newCurrent = neighbor ? neighbor.id : null;
-    }
+      const newSheets = sheets.filter((s) => s.id !== id);
 
-    set({ sheets: newSheets, currentSheetId: newCurrent });
+      // 3) 다음 current 를 “반드시 string”으로 결정
+      //    - 지운 탭의 왼쪽(가능하면) 아니면 첫 탭
+      const nextIdx = Math.max(0, idxRemoved - 1);
+      const next = newSheets[nextIdx] ?? newSheets[0]; // newSheets는 최소 1개 보장
+      const nextId = next.id; // <- string 확정
+
+      set({ sheets: newSheets });
+      get().setCurrentSheet(nextId); // ✅ string만 전달
+    });
+  },
+
+  loadSheetsMeta: async () => {
+    await withUserId(async (uid) => {
+      const { data, error } = await supabase
+        .from("sheets_meta")
+        .select("sheet_id,name,order")
+        .eq("user_id", uid)
+        .order("order", { ascending: true });
+
+      if (error) {
+        console.error("sheets_meta load 실패:", error);
+        return;
+      }
+
+      const sheets = (data ?? []).map((r) => ({
+        id: r.sheet_id,
+        name: r.name,
+      }));
+      const final = sheets.length
+        ? sheets
+        : [{ id: "default", name: "Sheet1" }];
+
+      // final[0]는 존재 보장 → string 확정
+      set({ sheets: final, currentSheetId: final[0].id, sheetId: final[0].id });
+
+      await Promise.all([
+        get().loadLayout(),
+        get().loadCellData(),
+        get().loadCellStyles(),
+      ]);
+      get().syncMirrorToFocus();
+    });
   },
 }));
