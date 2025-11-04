@@ -220,12 +220,12 @@ export default function ToolBar() {
         <span className={styles.sectionTitle}>테두리</span>
 
         <label className={styles.borderField}>
-          <span>색</span>
           <input
             type="color"
             value={borderColor}
             onChange={(e) => setBorderColor(e.target.value)}
             title="테두리 색상"
+            style={{ width: "30px" }}
           />
         </label>
 
@@ -258,37 +258,53 @@ export default function ToolBar() {
           </select>
         </label>
 
+        {/* 아이콘 버튼들 */}
         <div className={styles.borderButtons}>
           <button
-            className={styles.borderBtn}
+            type="button"
+            className={styles.iconBtn}
             onClick={() => applyBorder("outline")}
             title="외곽선 적용"
+            aria-label="외곽선 적용"
           >
-            외곽
+            <img
+              src="/images/border-outline.png"
+              alt=""
+              width={20}
+              height={20}
+            />
           </button>
+
           <button
-            className={styles.borderBtn}
+            type="button"
+            className={styles.iconBtn}
             onClick={() => applyBorder("inner")}
             title="내부선 적용"
+            aria-label="내부선 적용"
           >
-            내부
+            <img src="/images/border-inner.png" alt="" width={20} height={20} />
           </button>
+
           <button
-            className={styles.borderBtn}
+            type="button"
+            className={styles.iconBtn}
             onClick={() => applyBorder("all")}
             title="전체선 적용"
+            aria-label="전체선 적용"
           >
-            전체
+            <img src="/images/border-all.png" alt="" width={20} height={20} />
           </button>
 
           <div className={styles.vDividerThin} />
 
           <button
-            className={`${styles.borderBtn} ${styles.danger}`}
+            type="button"
+            className={`${styles.iconBtn} ${styles.danger}`}
             onClick={() => clearBorder()}
             title="모든 테두리 지우기"
+            aria-label="모든 테두리 지우기"
           >
-            지우기
+            <img src="/images/border-none.png" alt="" width={20} height={20} />
           </button>
         </div>
       </div>
