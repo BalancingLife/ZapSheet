@@ -2,6 +2,7 @@ import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";
 import { useSheetStore } from "./store/useSheetStore";
 import { formatWithComma, isNumericValue } from "@/utils/numberFormat";
+import { DEFAULT_FONT_SIZE } from "./SheetConstants";
 
 type CellProps = {
   row: number;
@@ -38,7 +39,9 @@ function Cell({ row, col }: CellProps) {
     return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
   });
 
-  const fontSize = useSheetStore((s) => s.getFontSize(row, col));
+  const fontSize = useSheetStore(
+    (s) => s.stylesByCell[`${row}:${col}`]?.fontSize ?? DEFAULT_FONT_SIZE
+  );
 
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,8 +49,7 @@ function Cell({ row, col }: CellProps) {
   const numeric = isNumericValue(val);
   const alignClass = numeric ? styles.alignBottomRight : styles.alignBottomLeft;
 
-  const getCellStyle = useSheetStore((s) => s.getCellStyle);
-  const style = getCellStyle(row, col);
+  const style = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
 
   useEffect(() => {
     if (isFocused && isEditing && editingSource === "cell") {
