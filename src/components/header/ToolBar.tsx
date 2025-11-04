@@ -3,6 +3,11 @@ import styles from "./ToolBar.module.css";
 import { useSheetStore } from "../sheet/store/useSheetStore";
 
 export default function ToolBar() {
+  const applyStyleToSelection = useSheetStore((s) => s.applyStyleToSelection);
+  const clearSelectionStyles = useSheetStore((s) => s.clearSelectionStyles);
+  const getCellStyle = useSheetStore((s) => s.getCellStyle);
+  const focus = useSheetStore((s) => s.focus);
+
   const undo = useSheetStore((s) => s.undo);
   const redo = useSheetStore((s) => s.redo);
 
@@ -11,6 +16,23 @@ export default function ToolBar() {
 
   // 로컬 상태로 입력 중인 값 관리
   const [tempFontSize, setTempFontSize] = useState<string>(String(fontSize));
+
+  const currentStyle = focus ? getCellStyle(focus.row, focus.col) : undefined;
+  const currentTextColor = currentStyle?.textColor ?? "#000000";
+  const currentBgColor = currentStyle?.bgColor ?? "#ffffff";
+
+  const handleTextColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const color = e.target.value;
+    applyStyleToSelection({ textColor: color });
+  };
+
+  const handleBgColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const color = e.target.value;
+    applyStyleToSelection({ bgColor: color });
+  };
+
+  const resetTextColor = () => clearSelectionStyles(["textColor"]);
+  const resetBgColor = () => clearSelectionStyles(["bgColor"]);
 
   useEffect(() => {
     setTempFontSize(String(fontSize));
@@ -48,9 +70,11 @@ export default function ToolBar() {
         <img width="10px" src="/images/redo.png" alt="다시실행" />
       </div>
 
+      <div className={styles.vDivider} />
+
       {/* 글자 크기 */}
       <div className={styles.group}>
-        <button className={styles.btn} onClick={stepDown} title="작게">
+        <button className={styles.fontSizeBtn} onClick={stepDown} title="작게">
           –
         </button>
         <input
@@ -59,13 +83,39 @@ export default function ToolBar() {
           onChange={onInputChange}
           onKeyDown={onKeyDown}
         />
-        <button className={styles.btn} onClick={stepUp} title="크게">
+        <button className={styles.fontSizeBtn} onClick={stepUp} title="크게">
           +
         </button>
       </div>
 
-      <div>글자 색상</div>
-      <div>배경 색상</div>
+      <div className={styles.vDivider} />
+
+      <div className={styles.colorControls}>
+        {/* 글자색 */}
+        <label>
+          Text
+          <input
+            type="color"
+            value={currentTextColor}
+            onChange={handleTextColorChange}
+          />
+        </label>
+        <button onClick={resetTextColor}>Reset</button>
+
+        <div className={styles.vDivider} />
+
+        {/* 배경색 */}
+        <label>
+          BG
+          <input
+            type="color"
+            value={currentBgColor}
+            onChange={handleBgColorChange}
+          />
+        </label>
+        <button onClick={resetBgColor}>Reset</button>
+      </div>
+
       <div>테두리</div>
     </div>
   );

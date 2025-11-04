@@ -46,6 +46,9 @@ function Cell({ row, col }: CellProps) {
   const numeric = isNumericValue(val);
   const alignClass = numeric ? styles.alignBottomRight : styles.alignBottomLeft;
 
+  const getCellStyle = useSheetStore((s) => s.getCellStyle);
+  const style = getCellStyle(row, col);
+
   useEffect(() => {
     if (isFocused && isEditing && editingSource === "cell") {
       // 편집용 input에 포커스(아래 useEffect에서 처리)
@@ -161,7 +164,14 @@ function Cell({ row, col }: CellProps) {
       className={`${styles.cellView} ${alignClass} ${
         isFocused ? styles.focused : ""
       } ${isSelected ? "selected" : ""}`}
-      style={{ fontSize: `${fontSize}px` }}
+      style={{
+        color: style?.textColor,
+        backgroundColor: style?.bgColor,
+        fontSize: `${fontSize}px`,
+        fontWeight: style?.bold ? "bold" : "normal",
+        fontStyle: style?.italic ? "italic" : "normal",
+        textDecoration: style?.underline ? "underline" : "none",
+      }}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}

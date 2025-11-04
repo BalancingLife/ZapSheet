@@ -19,7 +19,14 @@ export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
 export type Grid2D = string[][];
-export type CellStyle = { fontSize?: number };
+export type CellStyle = {
+  fontSize?: number;
+  textColor?: string;
+  bgColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+};
 // --------- Slice ---------
 
 // UI 상태
@@ -119,12 +126,14 @@ type HistorySlice = {
   /** 과거 스냅샷 스택 */
   historyPast: Array<{
     data: Record<string, string>;
+    stylesByCell: Record<string, CellStyle>;
     selection: Rect | null;
     focus: Pos | null;
   }>;
 
   historyFuture: Array<{
     data: Record<string, string>;
+    stylesByCell: Record<string, CellStyle>;
     selection: Rect | null;
     focus: Pos | null;
   }>;
@@ -147,19 +156,19 @@ type StyleSlice = {
 
   // 개별 좌표 조회
   getFontSize: (row: number, col: number) => number;
-
   // 포커스 셀 기준 조회
   getFontSizeForFocus: () => number;
-
   // 선택영역 폰트사이즈 변경
   setFontSize: (next: number) => Promise<void> | void;
-
   /** Supabase로부터 스타일 로드 */
   loadCellStyles: () => Promise<void>;
-
   upsertCellStyles?: (
     payload: Array<{ row: number; col: number; style_json: CellStyle }>
   ) => Promise<void>;
+
+  getCellStyle: (row: number, col: number) => CellStyle | undefined;
+  applyStyleToSelection: (patch: Partial<CellStyle>) => Promise<void> | void;
+  clearSelectionStyles: (keys?: (keyof CellStyle)[]) => Promise<void> | void;
 };
 
 type SheetState = LayoutSlice &
@@ -429,9 +438,73 @@ async function persistDataDiff(
   });
 }
 
+async function persistStyleDiff(
+  oldStyles: Record<string, CellStyle>,
+  newStyles: Record<string, CellStyle>
+) {
+  const toUpsert: Array<{ row: number; col: number; style_json: CellStyle }> =
+    [];
+  const toDelete: Array<{ row: number; col: number }> = [];
+
+  const keySet = new Set([
+    ...Object.keys(oldStyles),
+    ...Object.keys(newStyles),
+  ]);
+
+  for (const k of keySet) {
+    const before = oldStyles[k];
+    const after = newStyles[k];
+    const [r, c] = k.split(":").map((n) => parseInt(n, 10));
+
+    // 동일 스타일이면 스킵
+    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+
+    if (!after || Object.keys(after).length === 0) {
+      toDelete.push({ row: r, col: c });
+    } else {
+      toUpsert.push({ row: r, col: c, style_json: after });
+    }
+  }
+
+  if (toUpsert.length === 0 && toDelete.length === 0) return;
+
+  await withUserId(async (uid) => {
+    const { sheetId } = useSheetStore.getState();
+
+    if (toUpsert.length > 0) {
+      const payload = toUpsert.map((c) => ({
+        row: c.row,
+        col: c.col,
+        style_json: c.style_json,
+        user_id: uid,
+        sheet_id: sheetId,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase
+        .from("cell_styles")
+        .upsert(payload, { onConflict: "user_id,sheet_id,row,col" });
+      if (error) console.error("undo/redo style upsert 실패:", error);
+    }
+
+    if (toDelete.length > 0) {
+      const orClauses = toDelete.map(
+        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+      );
+      const { error } = await supabase
+        .from("cell_styles")
+        .delete()
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId)
+        .or(orClauses.join(","));
+      if (error) console.error("undo/redo style delete 실패:", error);
+    }
+  });
+}
+
 function makeSnapshot(s: SheetState) {
   return {
     data: { ...s.data },
+    stylesByCell: { ...s.stylesByCell },
     selection: s.selection ? { ...s.selection } : null,
     focus: s.focus ? { ...s.focus } : null,
   };
@@ -904,11 +977,13 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (historyPast.length === 0) return;
 
     const prevData = get().data; // DB diff용 (변경 전)
+    const prevStyles = get().stylesByCell;
     const last = historyPast[historyPast.length - 1]; // 복원할 스냅샷
     const nowSnap = makeSnapshot(get()); // 현재 스냅샷을 future로 보관
 
     set({
       data: last.data,
+      stylesByCell: last.stylesByCell,
       selection: last.selection,
       focus: last.focus ?? null,
       isSelecting: false,
@@ -920,6 +995,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
 
     await persistDataDiff(prevData, last.data);
+    await persistStyleDiff(prevStyles, last.stylesByCell);
     get().syncMirrorToFocus();
   },
 
@@ -928,11 +1004,13 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (historyFuture.length === 0) return;
 
     const prevData = get().data; // DB diff용
+    const prevStyles = get().stylesByCell;
     const next = historyFuture[historyFuture.length - 1]; // 적용할 스냅샷
     const nowSnap = makeSnapshot(get()); // 현재 상태는 past에 쌓기
 
     set({
       data: next.data,
+      stylesByCell: next.stylesByCell,
       selection: next.selection,
       focus: next.focus ?? null,
       isSelecting: false,
@@ -944,6 +1022,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
 
     await persistDataDiff(prevData, next.data);
+    await persistStyleDiff(prevStyles, next.stylesByCell);
     get().syncMirrorToFocus();
   },
 
@@ -963,6 +1042,129 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // ----StyleSlice----
   stylesByCell: {},
 
+  getCellStyle: (row, col) => {
+    return get().stylesByCell[keyOf(row, col)];
+  },
+
+  applyStyleToSelection: async (patch) => {
+    get().pushHistory();
+    const sel = get().selection;
+    const focus = get().focus;
+    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    if (targets.length === 0) return;
+
+    // 1) 로컬 상태 즉시 업데이트
+    const nextMap = { ...get().stylesByCell };
+    const touched: Array<{ row: number; col: number }> = [];
+
+    for (const { row, col } of targets) {
+      const k = keyOf(row, col);
+      const prev = nextMap[k] ?? {};
+      const merged = { ...prev, ...patch };
+
+      // 빈 객체는 저장하지 않음 (폰트사이즈만 있을 수 있으므로 그대로 병합)
+      nextMap[k] = merged;
+      touched.push({ row, col });
+    }
+    set({ stylesByCell: nextMap });
+
+    // 2) 비차단 저장 (폰트사이즈 저장 로직과 동일 테이블 재사용)
+    void withUserId(async (uid) => {
+      const { sheetId } = get();
+      const rows = touched.map(({ row, col }) => ({
+        user_id: uid,
+        sheet_id: sheetId,
+        row,
+        col,
+        style_json: nextMap[keyOf(row, col)],
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase
+        .from("cell_styles")
+        .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+
+      if (error) console.error("cell_styles upsert 실패:", error);
+    });
+  },
+
+  clearSelectionStyles: async (keys) => {
+    get().pushHistory();
+    const sel = get().selection;
+    const focus = get().focus;
+    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    if (targets.length === 0) return;
+
+    // 1) 로컬 상태 갱신
+    const prevMap = get().stylesByCell;
+    const nextMap: Record<string, CellStyle> = { ...prevMap };
+    const toDeleteRemote: Array<{ row: number; col: number }> = [];
+    const toUpsertRemote: Array<{
+      row: number;
+      col: number;
+      style: CellStyle;
+    }> = [];
+
+    for (const { row, col } of targets) {
+      const k = keyOf(row, col);
+      const cur = nextMap[k];
+      if (!cur) continue;
+
+      if (!keys || keys.length === 0) {
+        // 전체 스타일 제거
+        delete nextMap[k];
+        toDeleteRemote.push({ row, col });
+      } else {
+        // 지정 키만 제거
+        const cloned = { ...cur };
+        keys.forEach((kk) => delete (cloned as Partial<CellStyle>)[kk]);
+        if (Object.keys(cloned).length === 0) {
+          delete nextMap[k];
+          toDeleteRemote.push({ row, col });
+        } else {
+          nextMap[k] = cloned;
+          toUpsertRemote.push({ row, col, style: cloned });
+        }
+      }
+    }
+    set({ stylesByCell: nextMap });
+
+    // 2) 비차단 저장 (삭제와 업데이트 분기)
+    void withUserId(async (uid) => {
+      const { sheetId } = get();
+
+      // upsert
+      if (toUpsertRemote.length > 0) {
+        const rows = toUpsertRemote.map(({ row, col, style }) => ({
+          user_id: uid,
+          sheet_id: sheetId,
+          row,
+          col,
+          style_json: style,
+          updated_at: new Date().toISOString(),
+        }));
+        const { error } = await supabase
+          .from("cell_styles")
+          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+        if (error) console.error("cell_styles upsert 실패:", error);
+      }
+
+      // delete
+      if (toDeleteRemote.length > 0) {
+        const orClauses = toDeleteRemote.map(
+          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+        );
+        const { error } = await supabase
+          .from("cell_styles")
+          .delete()
+          .eq("user_id", uid)
+          .eq("sheet_id", sheetId)
+          .or(orClauses.join(","));
+        if (error) console.error("cell_styles delete 실패:", error);
+      }
+    });
+  },
+
   getFontSize: (row, col) => {
     const key = keyOf(row, col);
     const style = get().stylesByCell[key];
@@ -976,6 +1178,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   setFontSize: (next) => {
+    get().pushHistory();
     const n = Math.round(clamp(next, 0, 72));
 
     const sel = get().selection;
