@@ -720,8 +720,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         });
       } else {
         set({
-          columnWidths: Array.from({ length: COLUMN_COUNT }, () => 100),
-          rowHeights: Array.from({ length: ROW_COUNT }, () => 25),
+          columnWidths: Array.from(
+            { length: COLUMN_COUNT },
+            () => DEFAULT_COL_WIDTH
+          ),
+          rowHeights: Array.from(
+            { length: ROW_COUNT },
+            () => DEFAULT_ROW_HEIGHT
+          ),
           isLayoutReady: true,
         });
       }
