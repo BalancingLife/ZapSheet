@@ -20,7 +20,6 @@ export type SheetMeta = { id: string; name: string };
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
-export type Grid2D = string[][];
 export type CellStyle = {
   fontSize?: number;
   textColor?: string;
@@ -126,9 +125,7 @@ type DataSlice = {
   getValue: (r: number, c: number) => string;
   setValue: (r: number, c: number, v: string) => void;
   loadCellData: () => Promise<void>;
-  clearData: () => void;
   clearSelectionCells: () => Promise<void>;
-  resetSheetState: () => void;
 };
 
 type ClipboardSlice = {
@@ -1052,12 +1049,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  clearData: () => {
-    // 디버깅 로그
-    console.warn("[clearData] called. stack=", new Error().stack);
-    set({ data: {} });
-  },
-
   clearSelectionCells: async () => {
     const sel = get().selection;
     if (!sel) return;
@@ -1085,20 +1076,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       if (error) console.error("clearSelectionCells 삭제 실패:", error);
     });
   },
-
-  resetSheetState: () =>
-    set({
-      data: {},
-      stylesByCell: {},
-      historyPast: [],
-      historyFuture: [],
-      formulaMirror: "",
-      selection: null,
-      isSelecting: false,
-      anchor: null,
-      head: null,
-      focus: { row: 0, col: 0 },
-    }),
 
   // ====== Clipboard Slice ======
   clipboard: null,

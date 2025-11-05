@@ -18,9 +18,6 @@ export default function SheetBoot() {
     // 로그인/로그아웃 감지
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") loadSheetsMeta?.();
-      if (event === "SIGNED_OUT") {
-        // 여기서는 resetSheetState() 쓰는 게 이상적(이미 안내했음)
-      }
     });
 
     // 탭 복귀 시 현재 sheetId로 값/스타일만 다시 땡겨오기 (초기화 X)
