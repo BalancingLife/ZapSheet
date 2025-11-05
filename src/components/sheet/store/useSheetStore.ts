@@ -1691,8 +1691,12 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   setCurrentSheet: (id) => {
+    // 이미 활성화된 시트면 무동작
+    const { currentSheetId, sheets } = get();
+    if (currentSheetId === id) return;
+
     // 존재하는 시트만 선택
-    const exists = get().sheets.some((s) => s.id === id);
+    const exists = sheets.some((s) => s.id === id);
     if (!exists) return;
     // 1) 현재 시트 아이디 동기화
     set({ currentSheetId: id, sheetId: id });
