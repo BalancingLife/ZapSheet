@@ -1,3 +1,4 @@
+import { toDisplayString, DISPLAY_ERROR } from "@/utils/formula";
 import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";
 import { useSheetStore } from "./store/useSheetStore";
@@ -39,6 +40,12 @@ function Cell({ row, col }: CellProps) {
     if (isThis && s.editingSource === "formula") return s.formulaMirror; // ★
     return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
   });
+  const displayVal = toDisplayString(val);
+  const isErr = displayVal === DISPLAY_ERROR;
+  const isDisplayNumeric = isNumericValue(displayVal);
+  const alignClass = isDisplayNumeric
+    ? styles.alignBottomRight
+    : styles.alignBottomLeft;
 
   const fontSize = useSheetStore(
     (s) => s.stylesByCell[`${row}:${col}`]?.fontSize ?? DEFAULT_FONT_SIZE
@@ -46,9 +53,6 @@ function Cell({ row, col }: CellProps) {
 
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const numeric = isNumericValue(val);
-  const alignClass = numeric ? styles.alignBottomRight : styles.alignBottomLeft;
 
   const style = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
   const borderCss = useBorderCss(row, col);
@@ -167,10 +171,10 @@ function Cell({ row, col }: CellProps) {
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
       className={`${styles.cellView} ${alignClass} ${
         isFocused ? styles.focused : ""
-      } ${isSelected ? "selected" : ""}`}
+      } ${isSelected ? "selected" : ""} ${isErr ? styles.error : ""}`}
       style={{
         ...borderCss,
-        color: style?.textColor,
+        color: isErr ? "#d93025" : style?.textColor,
         backgroundColor: style?.bgColor,
         fontSize: `${fontSize}px`,
         fontWeight: style?.bold ? "bold" : "normal",
@@ -181,8 +185,13 @@ function Cell({ row, col }: CellProps) {
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}
       onDoubleClick={() => startEdit({ row, col })}
+      title={val ?? ""}
     >
-      {isEditing && editingSource === "formula" ? val : formatWithComma(val)}
+      {isEditing && editingSource === "formula"
+        ? val // 포뮬라 편집 중엔 수식 그대로
+        : isDisplayNumeric
+        ? formatWithComma(displayVal)
+        : displayVal}
     </div>
   );
 }

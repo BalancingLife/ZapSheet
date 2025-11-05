@@ -1,3 +1,4 @@
+import { evaluateFormulaStrict, isArithmeticFormula } from "@/utils/formula";
 import { useCallback } from "react";
 import { useSheetStore } from "../sheet/store/useSheetStore";
 import styles from "./FormulaInput.module.css";
@@ -28,15 +29,24 @@ export default function FormulaInput() {
       if (e.key === "Enter") {
         e.preventDefault();
         if (!focus) return; // 안전 가드
-        commitEdit(value); // 로컬+Supabase 저장 (네 스토어 로직)
+
+        const raw = (value ?? "").trim();
+        let commitValue = raw;
+
+        if (isArithmeticFormula(raw)) {
+          const result = evaluateFormulaStrict(raw);
+          if (result !== null) commitValue = String(result);
+        }
+        // 미러를 먼저 결과로 업데이트해 commitEdit가 내부에서 미러를 읽어도 안전
+        setFormulaInput(commitValue);
+        commitEdit(raw);
         move("down");
       } else if (e.key === "Escape") {
-        // 롤백: 포커스 셀 값을 다시 미러에 반영하고 편집 종료
         syncMirrorToFocus();
         useSheetStore.getState().cancelEdit();
       }
     },
-    [focus, value, commitEdit, syncMirrorToFocus, move]
+    [focus, value, commitEdit, setFormulaInput, syncMirrorToFocus, move]
   );
 
   return (

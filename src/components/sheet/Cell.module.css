@@ -37,3 +37,7 @@
   justify-content: flex-end; /* 가로: 오른쪽 */
   text-align: right;
 }
+
+.error {
+  color: #d93025 !important;
+}
