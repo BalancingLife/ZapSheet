@@ -35,25 +35,25 @@
 /* 탭 스타일 */
 .sheetItem {
   flex: 0 0 auto;
-  max-width: 180px;
-  min-width: 88px;
+  width: 60px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 8px;
   border: 1px solid #e6eaef;
   background: #fff;
   display: inline-flex;
+  justify-content: center;
   align-items: center;
   cursor: pointer;
   user-select: none;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
 .sheetItem:hover {
-  background: #f9fbff;
+  background: rgb(233, 233, 233);
 }
 .active {
-  border-color: #8fdb8f; /* 녹계열 */
-  box-shadow: 0 0 0 2px rgba(143, 219, 143, 0.2);
+  background-color: #e9effd;
+  color: #0b56cf;
 }
 
 .sheetName {

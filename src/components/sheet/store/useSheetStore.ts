@@ -1051,6 +1051,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       });
     });
   },
+
   clearData: () => {
     // 디버깅 로그
     console.warn("[clearData] called. stack=", new Error().stack);
@@ -1449,6 +1450,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       set({ stylesByCell: map });
     });
   },
+
   applyBorderToSelection: async (mode, spec) => {
     get().pushHistory();
 
