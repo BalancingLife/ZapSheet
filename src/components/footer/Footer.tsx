@@ -34,6 +34,16 @@ export default function Footer() {
     sheetId: null,
   });
 
+  // 시트 피커 드롭다운(햄버거)
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerPos, setPickerPos] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const [pickerIndex, setPickerIndex] = useState<number>(-1); // 키보드 탐색용
+  const hamburgerBtnRef = useRef<HTMLButtonElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     if (editingId && inputRef.current) {
       inputRef.current.focus();
@@ -41,11 +51,31 @@ export default function Footer() {
     }
   }, [editingId]);
 
+  // 바깥 클릭 시 닫기(컨텍스트 메뉴 + 시트 피커)
   useEffect(() => {
-    const onGlobalClick = () => setMenu((m) => ({ ...m, open: false }));
+    const onGlobalClick = (e: MouseEvent) => {
+      // 피커 내부 클릭은 무시
+      if (pickerRef.current && pickerRef.current.contains(e.target as Node))
+        return;
+      if (
+        hamburgerBtnRef.current &&
+        hamburgerBtnRef.current.contains(e.target as Node)
+      )
+        return;
+      setMenu((m) => ({ ...m, open: false }));
+      setPickerOpen(false);
+    };
     window.addEventListener("click", onGlobalClick);
     return () => window.removeEventListener("click", onGlobalClick);
   }, []);
+
+  // 피커 열릴 때 현재 시트로 포커스 인덱스 세팅
+  useEffect(() => {
+    if (pickerOpen) {
+      const idx = sheets.findIndex((s) => s.id === currentSheetId);
+      setPickerIndex(idx >= 0 ? idx : 0);
+    }
+  }, [pickerOpen, sheets, currentSheetId]);
 
   const startRename = (id: string, currentName: string) => {
     setEditingId(id);
@@ -88,6 +118,47 @@ export default function Footer() {
     setMenu({ open: false, x: 0, y: 0, sheetId: null });
   };
 
+  // 햄버거 클릭 → 시트 피커 토글
+  const openPickerFromButton = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!currentSheetId) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPickerPos({ x: rect.left, y: rect.top });
+    setPickerOpen((v) => !v);
+    // 컨텍스트 메뉴는 닫기
+    setMenu((m) => ({ ...m, open: false }));
+  };
+
+  // 피커에서 선택
+  const selectSheet = (id: string) => {
+    if (id === currentSheetId) {
+      setPickerOpen(false);
+      return;
+    }
+    setCurrentSheet(id);
+    setPickerOpen(false);
+  };
+
+  // 키보드 내비게이션
+  const onPickerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!pickerOpen) return;
+    if (e.key === "Escape") {
+      setPickerOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setPickerIndex((i) => Math.min(i + 1, sheets.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setPickerIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const target = sheets[pickerIndex];
+      if (target) selectSheet(target.id);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <button
@@ -99,18 +170,10 @@ export default function Footer() {
       </button>
 
       <button
+        ref={hamburgerBtnRef}
         className={styles.iconBtn}
-        aria-label="Open sheet menu"
-        onClick={(e) => {
-          if (!currentSheetId) return;
-          const rect = (e.target as HTMLElement).getBoundingClientRect();
-          setMenu({
-            open: true,
-            x: rect.left,
-            y: rect.top - 8,
-            sheetId: currentSheetId,
-          });
-        }}
+        aria-label="Open sheet list"
+        onClick={openPickerFromButton}
       >
         <img width="20" height="20" src="./images/hamburger.svg" alt="menu" />
       </button>
@@ -151,9 +214,47 @@ export default function Footer() {
         })}
       </div>
 
+      {/* 시트 피커 드롭다운 */}
+      {pickerOpen && (
+        <div
+          ref={pickerRef}
+          className={`${styles.sheetPicker} ${styles.dropAbove}`}
+          style={{ left: pickerPos.x, top: pickerPos.y }}
+          role="menu"
+          aria-label="시트 선택"
+          tabIndex={-1}
+          onKeyDown={onPickerKeyDown}
+        >
+          {sheets.map((s, idx) => {
+            const active = s.id === currentSheetId;
+            const highlighted = idx === pickerIndex;
+            return (
+              <button
+                key={s.id}
+                role="menuitemradio"
+                aria-checked={active}
+                className={`${styles.sheetPickItem} ${
+                  highlighted ? styles.sheetPickHover : ""
+                }`}
+                onMouseEnter={() => setPickerIndex(idx)}
+                onClick={() => selectSheet(s.id)}
+                title={s.name}
+              >
+                <span
+                  className={`${styles.checkArea} ${
+                    active ? styles.checked : ""
+                  }`}
+                />
+                <span className={styles.sheetPickName}>{s.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {menu.open && (
         <div
-          className={styles.ctxMenu}
+          className={`${styles.ctxMenu} ${styles.dropAbove}`}
           style={{ left: menu.x, top: menu.y }}
           role="menu"
         >

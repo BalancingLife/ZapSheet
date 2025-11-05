@@ -102,3 +102,79 @@
 .ctxItemDanger:hover {
   background: #fdeeed;
 }
+
+.sheetPicker {
+  position: fixed;
+  z-index: 1200;
+  min-width: 160px;
+  max-height: 50vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #e3e7ee;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+  padding: 6px 0;
+}
+
+.sheetPickItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.sheetPickItem:focus-visible {
+  outline: 2px solid #b8cdfd;
+  outline-offset: -2px;
+}
+
+.sheetPickHover {
+  /* 키보드/마우스 하이라이트 */
+  background: #eef3ff;
+}
+
+.checkArea {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  border-radius: 4px;
+  position: relative;
+}
+.checked::before {
+  content: "✔";
+  position: absolute;
+  left: 0;
+  top: -1px;
+  font-size: 14px;
+  color: #10a94e;
+}
+
+.sheetPickName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 스크롤바 숨김(선택) */
+.sheetPicker::-webkit-scrollbar {
+  width: 8px;
+}
+.sheetPicker::-webkit-scrollbar-thumb {
+  background: #dde3ef;
+  border-radius: 8px;
+}
+.sheetPicker::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropAbove {
+  transform: translateY(calc(-100% - 8px));
+  transform-origin: bottom left;
+}
