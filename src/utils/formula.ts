@@ -192,65 +192,51 @@ function roundSmart(v: number): number {
   return v;
 }
 
-export function toDisplayString(
-  raw: string | null | undefined,
-  opts?: { resolveCell?: (a1: string) => number | null }
-): string {
-  if (raw == null) return "";
-  const s = String(raw);
+// ======================================
+// 1) 함수 수식 감지/파싱 유틸
+// ======================================
+function parseFuncCall(src: string): { name: string; args: string } | null {
+  const t = src.trim();
+  // =FUNC( ... )
+  const m = /^=([A-Za-z]+)\((.*)\)$/.exec(t);
+  if (!m) return null;
 
-  //  SUM 우선 처리
-  if (isSumFormula(s)) {
-    const v = evalSUM(s, opts);
-    return v == null
-      ? DISPLAY_ERROR
-      : String(v).endsWith(".0")
-      ? String(Math.round(v))
-      : String(v);
-  }
-
-  if (!isArithmeticFormula(s.trim())) return s;
-
-  const v = evaluateFormulaStrict(s, opts);
-  if (v === null) return DISPLAY_ERROR;
-
-  // 보기 좋게 문자열화
-  const str = String(v);
-  // 끝이 ".0"이면 정수로 표시
-  return str.endsWith(".0") ? String(Math.round(v)) : str;
+  const [, name, args] = m;
+  return { name: name.toUpperCase(), args: args.trim() };
 }
 
-// --- SUM 포맷 감지
-
-// 이거 동작원리 이해
-// 이거 동작원리 이해
-// 이거 동작원리 이해
-// 이거 동작원리 이해
-function isSumFormula(s: string): boolean {
-  const t = s.trim();
-  return /^=SUM\(/i.test(t) && t.endsWith(")");
+function isSupportedFunc(
+  name: string
+): name is "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT" {
+  const n = name.toUpperCase();
+  return (
+    n === "SUM" ||
+    n === "AVERAGE" ||
+    n === "MIN" ||
+    n === "MAX" ||
+    n === "COUNT"
+  );
 }
-// 이거 동작원리 이해
-// 이거 동작원리 이해
-// 이거 동작원리 이해
-// 이거 동작원리 이해
 
-// --- SUM 본체 평가 : 숫자 | A1 | A1:B5 만 지원
-function evalSUM(
-  src: string,
-  opts?: { resolveCell?: (a1: string) => number | null }
-): number | null {
-  if (!opts?.resolveCell) return null;
-  const inner = src.trim().slice(1).trim(); // "=SUM(...)" -> "SUM(...)"
-  const body = inner.replace(/^SUM\(/i, "").slice(0, -1); // 괄호 안
+// ======================================
+// 2) 인자 수집기 (숫자만 모아서 배열로 반환)
+// - 숫자 리터럴, 단일 셀(A1), 범위(A1:B5)
+// - 비숫자는 무시
+// ======================================
+function collectNumericArgs(
+  argsStr: string,
+  resolveCell?: (a1: string) => number | null
+): number[] | null {
+  if (!resolveCell) return null;
 
-  // 콤마 분할
-  const args = body
+  // 아주 단순 콤마 split (이번 라운드: 중첩/문자열 미지원)
+  const args = argsStr
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
-  let acc = 0;
+  const out: number[] = [];
+
   for (const arg of args) {
     // 1) 범위?
     const rect = a1ToRect(arg);
@@ -258,8 +244,8 @@ function evalSUM(
       for (let r = rect.sr; r <= rect.er; r++) {
         for (let c = rect.sc; c <= rect.ec; c++) {
           const a1 = `${colToLabel(c)}${r + 1}`;
-          const v = opts.resolveCell(a1);
-          if (v != null && isFinite(v)) acc += v;
+          const v = resolveCell(a1);
+          if (v != null && isFinite(v)) out.push(v);
         }
       }
       continue;
@@ -269,20 +255,95 @@ function evalSUM(
     const pos = a1ToPos(arg);
     if (pos) {
       const a1 = `${colToLabel(pos.col)}${pos.row + 1}`;
-      const v = opts.resolveCell(a1);
-      if (v != null && isFinite(v)) acc += v;
+      const v = resolveCell(a1);
+      if (v != null && isFinite(v)) out.push(v);
       continue;
     }
 
     // 3) 숫자 리터럴?
     const n = Number(arg);
     if (isFinite(n)) {
-      acc += n;
+      out.push(n);
       continue;
     }
 
-    // 그 외는 0 취급(엑셀과 유사하게 비숫자 무시)
+    // 4) 그 외는 무시
   }
 
-  return roundSmart(acc);
+  return out;
+}
+
+// ======================================
+// 3) 집계기 (SUM/AVERAGE/MIN/MAX/COUNT)
+// - 대상이 0개면: AVERAGE/MIN/MAX => null, COUNT => 0
+// ======================================
+
+// Aggregate = 소프트웨어 개발에서 관련된 객체들의 집합
+
+function evalAggregate(
+  name: "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT",
+  argsStr: string,
+  resolveCell?: (a1: string) => number | null
+): number | null {
+  const nums = collectNumericArgs(argsStr, resolveCell);
+  if (nums == null) return null;
+
+  const n = nums.length;
+
+  switch (name) {
+    case "SUM": {
+      const s = nums.reduce((acc, v) => acc + v, 0);
+      return roundSmart(s);
+    }
+    case "AVERAGE": {
+      if (n === 0) return null;
+      const s = nums.reduce((acc, v) => acc + v, 0);
+      return roundSmart(s / n);
+    }
+    case "MIN": {
+      if (n === 0) return null;
+      let m = nums[0];
+      for (let i = 1; i < n; i++) if (nums[i] < m) m = nums[i];
+      return roundSmart(m);
+    }
+    case "MAX": {
+      if (n === 0) return null;
+      let m = nums[0];
+      for (let i = 1; i < n; i++) if (nums[i] > m) m = nums[i];
+      return roundSmart(m);
+    }
+    case "COUNT": {
+      return n; // 대상 0개면 0
+    }
+  }
+}
+
+// ======================================
+// 4) 기존 SUM 전용 분기를 "제너릭 디스패처"로 교체
+//    (기존 isSumFormula/evalSUM는 남겨도 되지만, 아래가 우선 적용됨)
+// ======================================
+
+export function toDisplayString(
+  raw: string | null | undefined,
+  opts?: { resolveCell?: (a1: string) => number | null }
+): string {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+
+  // 4-1) 함수 수식 디스패치 (SUM/AVERAGE/MIN/MAX/COUNT)
+  const fc = parseFuncCall(s);
+  if (fc && isSupportedFunc(fc.name)) {
+    const v = evalAggregate(fc.name, fc.args, opts?.resolveCell);
+    if (v == null || !isFinite(v)) return DISPLAY_ERROR;
+    const str = String(v);
+    return str.endsWith(".0") ? String(Math.round(v)) : str;
+  }
+
+  // 4-2) 사칙연산 (=1+2, =A1+B2*3 ...)
+  if (!isArithmeticFormula(s)) return s;
+  const v = evaluateFormulaStrict(s, opts);
+  if (v === null) return DISPLAY_ERROR;
+
+  const str = String(v);
+  return str.endsWith(".0") ? String(Math.round(v)) : str;
 }
