@@ -34,13 +34,15 @@ function Cell({ row, col }: CellProps) {
   const cancelEdit = useSheetStore((s) => s.cancelEdit);
   const commitEdit = useSheetStore((s) => s.commitEdit);
 
+  const resolveCell = useSheetStore((s) => s.resolveCellNumeric);
+
   // 표시 값
   const val = useSheetStore((s) => {
     const isThis = s.editing?.row === row && s.editing?.col === col;
     if (isThis && s.editingSource === "formula") return s.formulaMirror; // ★
     return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
   });
-  const displayVal = toDisplayString(val);
+  const displayVal = toDisplayString(val, { resolveCell });
   const isErr = displayVal === DISPLAY_ERROR;
   const isDisplayNumeric = isNumericValue(displayVal);
   const alignClass = isDisplayNumeric

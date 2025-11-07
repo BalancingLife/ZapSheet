@@ -1,6 +1,8 @@
 import React from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabaseClient";
+import { a1ToPos } from "@/utils/a1Utils";
+import { evaluateFormulaStrict } from "@/utils/formula";
 
 import {
   ROW_COUNT,
@@ -207,6 +209,10 @@ type SheetListSlice = {
   loadSheetsMeta: () => Promise<void>;
 };
 
+type FormulaRuntimeSlice = {
+  resolveCellNumeric: (a1: string, depth?: number) => number | null;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -218,7 +224,8 @@ type SheetState = LayoutSlice &
   HistorySlice &
   FormulaSlice &
   StyleSlice &
-  SheetListSlice;
+  SheetListSlice &
+  FormulaRuntimeSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -1782,5 +1789,27 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ]);
       get().syncMirrorToFocus();
     });
+  },
+
+  // FormulaRuntimeSlice Actions
+  resolveCellNumeric: (a1: string, depth: number = 0): number | null => {
+    if (depth > 50) return null; // 순환 가드
+
+    const pos = a1ToPos(a1);
+    if (!pos) return null;
+
+    const rawStr: string = get().getValue(pos.row, pos.col) ?? "";
+    if (!rawStr) return null;
+
+    if (rawStr.trim().startsWith("=")) {
+      const v = evaluateFormulaStrict(rawStr, {
+        resolveCell: (innerA1: string): number | null =>
+          get().resolveCellNumeric(innerA1, depth + 1),
+      });
+      return v == null || !isFinite(v) ? null : v;
+    }
+
+    const n = Number(rawStr);
+    return isFinite(n) ? n : null;
   },
 }));
