@@ -1,5 +1,4 @@
-import { evaluateFormulaStrict, isArithmeticFormula } from "@/utils/formula";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useSheetStore } from "../sheet/store/useSheetStore";
 import styles from "./FormulaInput.module.css";
 
@@ -14,14 +13,25 @@ export default function FormulaInput() {
   const commitEdit = useSheetStore((s) => s.commitEdit);
   const syncMirrorToFocus = useSheetStore((s) => s.syncMirrorToFocus);
   const move = useSheetStore((s) => s.move);
+
+  const caret = useSheetStore((s) => s.formulaCaret);
+  const setCaret = useSheetStore((s) => s.setFormulaCaret);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
   // 아직은 미러만 갱신 (셀 값 커밋은 다음 단계에서 Enter/Blur로 연결)
+
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const { editing, focus } = useSheetStore.getState();
       if (!editing && focus) startEdit(focus, "formula"); // ★ formula 소스로 편집 시작
       setFormulaInput(e.target.value); // 미러 갱신 → 셀 화면은 미러 렌더(1단계에서 완료)
+
+      // 입력 후 caret 저장
+      const pos = e.target.selectionStart ?? 0;
+      setCaret(pos);
     },
-    [startEdit, setFormulaInput]
+    [startEdit, setFormulaInput, setCaret]
   );
 
   const handleKeyDown = useCallback(
@@ -31,23 +41,39 @@ export default function FormulaInput() {
         if (!focus) return; // 안전 가드
 
         const raw = (value ?? "").trim();
-        let commitValue = raw;
-
-        if (isArithmeticFormula(raw)) {
-          const result = evaluateFormulaStrict(raw);
-          if (result !== null) commitValue = String(result);
-        }
-        // 미러를 먼저 결과로 업데이트해 commitEdit가 내부에서 미러를 읽어도 안전
-        setFormulaInput(commitValue);
+        // 결과로 치환하지 말고, “원문 수식” 그대로 커밋
         commitEdit(raw);
+
         move("down");
       } else if (e.key === "Escape") {
         syncMirrorToFocus();
         useSheetStore.getState().cancelEdit();
       }
     },
-    [focus, value, commitEdit, setFormulaInput, syncMirrorToFocus, move]
+    [focus, value, commitEdit, syncMirrorToFocus, move]
   );
+
+  // 입력창 포커스/선택 변화 시 caret 저장
+  const handleSelect = useCallback(
+    (e: React.SyntheticEvent<HTMLInputElement>) => {
+      const el = e.currentTarget;
+      const pos = el.selectionStart ?? 0;
+      setCaret(pos);
+    },
+    [setCaret]
+  );
+
+  // value/caret 변동 후, DOM selection을 store caret으로 맞춤
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const p = Math.max(0, Math.min((value ?? "").length, caret));
+    try {
+      el.setSelectionRange(p, p);
+    } catch {
+      console.log(" ");
+    }
+  }, [value, caret]);
 
   return (
     <div
@@ -60,10 +86,17 @@ export default function FormulaInput() {
         fx
       </div>
       <input
+        ref={inputRef}
         className={styles.input}
         value={value ?? ""}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onSelect={handleSelect}
+        onClick={handleSelect}
+        onFocus={() => {
+          const st = useSheetStore.getState();
+          if (!st.editing && st.focus) st.startEdit(st.focus, "formula");
+        }}
         spellCheck={false}
       />
     </div>

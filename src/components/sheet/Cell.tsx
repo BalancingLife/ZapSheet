@@ -5,6 +5,7 @@ import { useSheetStore } from "./store/useSheetStore";
 import { formatWithComma, isNumericValue } from "@/utils/numberFormat";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";
 import { useBorderCss } from "./store/useSheetStore";
+import { colToLabel, rectToA1 } from "@/utils/a1Utils";
 
 type CellProps = {
   row: number;
@@ -95,15 +96,28 @@ function Cell({ row, col }: CellProps) {
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.button !== 0) return; // 좌클릭만
+
+      const st = useSheetStore.getState();
+      const isFormulaEditing = st.editingSource === "formula";
+      const withModKey = e.ctrlKey || e.metaKey;
+
+      // ⌘/Ctrl + 클릭: 단일 셀 참조 삽입
+      if (isFormulaEditing && withModKey) {
+        e.preventDefault();
+        // 단일 셀 참조 "A1" 삽입
+        const a1 = `${colToLabel(col)}${row + 1}`;
+        st.insertRefAtCaret(a1, { commaSmart: true });
+        // 포커스 이동/selection 방지
+        return;
+      }
+
       const extend = e.shiftKey === true;
 
       // 텍스트 선택/포커스 이동 방지 (특히 Shift-클릭에서 DOM 포커스 튀는 것 막기)
       e.preventDefault();
-
       startSel({ row, col }, extend);
-
-      // Shift 아닐 때만 포커스 이동 (기준점 갱신)
-      if (!extend) setFocus({ row, col });
+      //  포뮬라 편집 중엔 setFocus 금지 (mirror가 덮어씌워지는 문제 방지)
+      if (!extend && !isFormulaEditing) setFocus({ row, col });
     },
     [row, col, startSel, setFocus]
   );
@@ -118,7 +132,20 @@ function Cell({ row, col }: CellProps) {
 
   const onMouseUp = useCallback(() => {
     endSel();
-  }, [endSel]);
+
+    const st = useSheetStore.getState();
+    if (st.editing?.row === row && st.editing?.col === col) {
+      // 셀 편집 중이면 무시 (셀 인라인 입력과 충돌 방지)
+      return;
+    }
+    if (st.editingSource === "formula") {
+      const sel = st.selection;
+      if (sel && sel.sr != null) {
+        const a1 = rectToA1(sel); // "A1" | "A1:B5"
+        st.insertRefAtCaret(a1, { commaSmart: true });
+      }
+    }
+  }, [endSel, row, col]);
 
   const isCellEditing = isEditing && editingSource === "cell"; // ★
 

@@ -170,6 +170,17 @@ type FormulaSlice = {
   formulaMirror: string;
   setFormulaInput: (v: string) => void;
   syncMirrorToFocus: () => void;
+  resolveCellNumeric: (a1: string, depth?: number) => number | null;
+
+  /** FormulaInput 내부 커서 위치(0-based) */
+  formulaCaret: number;
+  /** caret 갱신 */
+  setFormulaCaret: (pos: number) => void;
+  /**
+   * 현재 caret 위치에 A1 또는 A1:B5 같은 참조를 삽입
+   * commaSmart: 괄호 안 인자 사이에 있을 때 자동으로 콤마를 적절히 보정
+   */
+  insertRefAtCaret: (ref: string, opts?: { commaSmart?: boolean }) => void;
 };
 
 type StyleSlice = {
@@ -209,10 +220,6 @@ type SheetListSlice = {
   loadSheetsMeta: () => Promise<void>;
 };
 
-type FormulaRuntimeSlice = {
-  resolveCellNumeric: (a1: string, depth?: number) => number | null;
-};
-
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -224,8 +231,7 @@ type SheetState = LayoutSlice &
   HistorySlice &
   FormulaSlice &
   StyleSlice &
-  SheetListSlice &
-  FormulaRuntimeSlice;
+  SheetListSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -876,15 +882,20 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   selection: { sr: 0, sc: 0, er: 0, ec: 0 },
 
   startSelection: (pos, extend = false) => {
-    const { focus, setFocus } = get();
-    const base = extend && focus ? focus : pos;
+    const { focus, setFocus, editingSource } = get();
+    const isFormulaEditing = editingSource === "formula";
+
+    // 포뮬라 편집 중에는 anchor를 현재 anchor를 "드래그 시작 지점(pos)" 로 고정
+    const base = isFormulaEditing ? pos : extend && focus ? focus : pos;
+
     set({
       isSelecting: true,
       anchor: base,
       head: pos,
       selection: normRect(base, pos),
     });
-    if (!extend) setFocus(base);
+    // ⚠️ 포뮬라 편집 중엔 절대 setFocus 금지 (mirror가 덮여씌워지는 문제 방지)
+    if (!extend && !isFormulaEditing) setFocus(base);
   },
 
   updateSelection: (pos) => {
@@ -899,7 +910,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // Column 전체 선택
   selectColumn: (col, extend = false) => {
-    const { focus, setFocus } = get();
+    const { focus, setFocus, editingSource } = get();
+    const isFormulaEditing = editingSource === "formula";
+
     const c = clampCol(col);
 
     if (extend && focus) {
@@ -920,12 +933,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       isSelecting: false,
       anchor: { row: 0, col: c },
     });
-    setFocus({ row: 0, col: c });
+    if (!isFormulaEditing) setFocus({ row: 0, col: c });
   },
 
   // Row 전체 선택
   selectRow: (row, extend = false) => {
-    const { focus, setFocus } = get();
+    const { focus, setFocus, editingSource } = get();
+    const isFormulaEditing = editingSource === "formula";
+
     const r = clampRow(row);
 
     if (extend && focus) {
@@ -946,11 +961,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       isSelecting: false,
       anchor: { row: r, col: 0 },
     });
-    setFocus({ row: r, col: 0 });
+    if (!isFormulaEditing) setFocus({ row: r, col: 0 });
   },
 
   //  좌상단 코너 클릭용 (전체)
   selectAll: () => {
+    const { setFocus, editingSource } = get();
+    const isFormulaEditing = editingSource === "formula";
+
     const rect: Rect = {
       sr: 0,
       sc: 0,
@@ -958,7 +976,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ec: COLUMN_COUNT - 1,
     };
     set({ selection: rect, isSelecting: false, anchor: null });
-    get().setFocus({ row: 0, col: 0 });
+    if (!isFormulaEditing) setFocus({ row: 0, col: 0 }); // ← 금지
   },
 
   isSelected: (r, c) => {
@@ -1207,7 +1225,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     get().syncMirrorToFocus();
   },
 
-  // formula
+  // Formula Slice
   formulaMirror: "",
 
   setFormulaInput: (v) =>
@@ -1218,6 +1236,67 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (!f) return;
     const v = get().getValue(f.row, f.col) ?? "";
     set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v }));
+  },
+
+  resolveCellNumeric: (a1: string, depth: number = 0): number | null => {
+    if (depth > 50) return null; // 순환 가드
+
+    const pos = a1ToPos(a1);
+    if (!pos) return null;
+
+    const rawStr: string = get().getValue(pos.row, pos.col) ?? "";
+    if (!rawStr) return null;
+
+    if (rawStr.trim().startsWith("=")) {
+      const v = evaluateFormulaStrict(rawStr, {
+        resolveCell: (innerA1: string): number | null =>
+          get().resolveCellNumeric(innerA1, depth + 1),
+      });
+      return v == null || !isFinite(v) ? null : v;
+    }
+
+    const n = Number(rawStr);
+    return isFinite(n) ? n : null;
+  },
+
+  formulaCaret: 0,
+  setFormulaCaret: (pos) => set({ formulaCaret: Math.max(0, pos) }),
+
+  insertRefAtCaret: (ref, opts) => {
+    const s = get();
+    const src = s.formulaMirror ?? "";
+    let caret = s.formulaCaret ?? 0;
+    caret = Math.max(0, Math.min(src.length, caret));
+
+    // 스마트 콤마: "..., " 보정
+    let ins = ref;
+    if (opts?.commaSmart) {
+      const left = src.slice(0, caret);
+      const right = src.slice(caret);
+
+      // 왼쪽 끝 문자를 보고 콤마 필요 여부 판단
+      const leftCh = left.trimEnd().slice(-1); // '(' or ',' or other
+      const needCommaLeft = left.length > 0 && leftCh !== "(" && leftCh !== ",";
+
+      // 오른쪽 시작이 ')'가 아니고, 오른쪽이 비어있지 않으며 앞에 콤마가 없다면 뒤쪽에도 콤마 필요할 수 있음
+      const rightCh = right.trimStart()[0];
+      const needCommaRight =
+        right.length > 0 && rightCh && rightCh !== ")" && rightCh !== ",";
+
+      if (needCommaLeft) ins = "," + ins;
+      // 뒤쪽에 바로 다른 인자가 있다면 ",ref," 형태로 정돈
+      if (needCommaRight) ins = ins + ",";
+    }
+
+    const next = src.slice(0, caret) + ins + src.slice(caret);
+    const nextCaret = caret + ins.length;
+
+    // 미러와 caret 동기
+    set((st) =>
+      st.formulaMirror === next && st.formulaCaret === nextCaret
+        ? {}
+        : { formulaMirror: next, formulaCaret: nextCaret }
+    );
   },
 
   // ----StyleSlice----
@@ -1789,27 +1868,5 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ]);
       get().syncMirrorToFocus();
     });
-  },
-
-  // FormulaRuntimeSlice Actions
-  resolveCellNumeric: (a1: string, depth: number = 0): number | null => {
-    if (depth > 50) return null; // 순환 가드
-
-    const pos = a1ToPos(a1);
-    if (!pos) return null;
-
-    const rawStr: string = get().getValue(pos.row, pos.col) ?? "";
-    if (!rawStr) return null;
-
-    if (rawStr.trim().startsWith("=")) {
-      const v = evaluateFormulaStrict(rawStr, {
-        resolveCell: (innerA1: string): number | null =>
-          get().resolveCellNumeric(innerA1, depth + 1),
-      });
-      return v == null || !isFinite(v) ? null : v;
-    }
-
-    const n = Number(rawStr);
-    return isFinite(n) ? n : null;
   },
 }));
