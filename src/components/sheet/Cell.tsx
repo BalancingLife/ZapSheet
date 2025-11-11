@@ -37,10 +37,9 @@ function Cell({ row, col }: CellProps) {
 
   const resolveCell = useSheetStore((s) => s.resolveCellNumeric);
 
-  // 표시 값
   const val = useSheetStore((s) => {
     const isThis = s.editing?.row === row && s.editing?.col === col;
-    if (isThis && s.editingSource === "formula") return s.formulaMirror; // ★
+    if (isThis && s.editingSource === "formula") return s.formulaMirror;
     return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
   });
   const displayVal = toDisplayString(val, { resolveCell });

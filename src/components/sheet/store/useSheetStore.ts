@@ -124,6 +124,8 @@ type EditSlice = {
 
 type DataSlice = {
   data: Record<string, string>; // key = `${row}:${col}`
+  // 잠깐 Record<K, T> 란
+  // “K라는 key를 가진 객체이며, 그 value는 T 타입이다.” 라는 의미
   getValue: (r: number, c: number) => string;
   setValue: (r: number, c: number, v: string) => void;
   loadCellData: () => Promise<void>;
@@ -238,16 +240,20 @@ type SheetState = LayoutSlice &
 // =====================
 
 // 현재 로그인 유저 id 추출
+// 모든 DB I/O는 user_id가 필요하다. 매번 인증 객체에서 uid를 꺼내는 중복을 없애고, “인증 안 됨” 케이스를 한 곳에서 표준화하기 위함.
 async function getCurrentUserId(): Promise<string | null> {
+  // Prmoise<string |null> : “비동기로 동작하고, 끝나면 유저 id(문자열) 또는 null을 돌려줄 거야” 라는 선언.
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await supabase.auth.getUser(); //supabase.auth.getUser(): Supabase 클라이언트가 현재 세션의 유저를 가져옴.
   if (error || !user) return null;
   return user.id;
 }
 
-// 유저 확인을 래핑 (반복 제거)
+// "로그인 안 되어 있으면 조용히 빠지고,
+// 되어 있으면 uid 넣어서 네 콜백 실행시켜줄게"
+// 라는 안전한 비동기 헬퍼 함수
 async function withUserId<T>(
   fn: (uid: string) => Promise<T>
 ): Promise<T | void> {
@@ -259,25 +265,39 @@ async function withUserId<T>(
   return fn(uid);
 }
 
-// 좌표 키
+// keyOf(3,2) => 3:2 반환
 const keyOf = (r: number, c: number) => `${r}:${c}`;
 
 // 지정된 범위를 벗어나지 않게 보정
+// 수치를 [lo, hi] 범위로 제한
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
-// 행/열 인덱스를 시트 경계 안으로 클램프
+
+// 행 인덱스를 시트 높이 범위로 제한
 const clampRow = (r: number) => clamp(r, 0, ROW_COUNT - 1);
+// 열 인덱스를 시트 너비 범위로 제한
 const clampCol = (c: number) => clamp(c, 0, COLUMN_COUNT - 1);
 
+// 마우스로 아래→위 방향으로 드래그하면,
+// 시작점보다 끝점의 좌표가 더 작을 수 있다.
+// 시작: (5, 2)
+// 끝: (2, 4)
+// 이걸 그대로 쓰면 selection 계산이 꼬인다.
+// 그래서 무조건 “좌상단 → 우하단” 순서로 정규화(normalize) 해야 한다.
+// 그걸 담당하는 것이 normRect
 function normRect(a: Pos, b: Pos): Rect {
-  const sr = Math.min(a.row, b.row);
-  const er = Math.max(a.row, b.row);
-  const sc = Math.min(a.col, b.col);
-  const ec = Math.max(a.col, b.col);
-  return { sr, sc, er, ec };
+  const sr = Math.min(a.row, b.row); // → 두 좌표 중 더 위쪽 행을 sr(start row)로 지정
+  const er = Math.max(a.row, b.row); // → 두 좌표 중 더 아래쪽 행을 er(end row)로 지정
+  const sc = Math.min(a.col, b.col); // 열도 동일
+  const ec = Math.max(a.col, b.col); // 열도 동일
+  return { sr, sc, er, ec }; // 즉, a와 b 순서에 상관없이 항상 sr ≤ er, sc ≤ ec 가 보장
 }
 
-// 방향 델타 상수 (상수 컨벤션: 대문자))
+// DIR : 방향 델타 상수 (상수 컨벤션: 대문자)
+// 모든 방향에 대해 dr(행 변화량)과 dc(열 변화량)을 매핑해둔 딕셔너리
+// 이걸 이용해 이동 계산을 간결하게 표현할 수 있다
+// row += dr;
+// col += dc;
 const DIR: Record<Dir, { dr: number; dc: number }> = {
   up: { dr: -1, dc: 0 },
   down: { dr: 1, dc: 0 },
@@ -285,13 +305,13 @@ const DIR: Record<Dir, { dr: number; dc: number }> = {
   right: { dr: 0, dc: 1 },
 };
 
-// 한 칸 이동
+// step1(p,dir)) p에서 dir 방향으로 한 칸 이동 함수
 const step1 = (p: Pos, dir: Dir): Pos => {
-  const { dr, dc } = DIR[dir];
-  return { row: clampRow(p.row + dr), col: clampCol(p.col + dc) };
+  const { dr, dc } = DIR[dir]; // DIR 을 이용하여 행/열 이동 방향량을 가져옴
+  return { row: clampRow(p.row + dr), col: clampCol(p.col + dc) }; // 새로운 객체 Pos (row,col) 를 반환
 };
 
-// 경계로 점프
+// toEdge() 경계로 점프하는 함수 (Ctrl + 화살표)
 const toEdge = (p: Pos, dir: Dir): Pos => {
   if (dir === "up") return { row: 0, col: p.col };
   if (dir === "down") return { row: ROW_COUNT - 1, col: p.col };
@@ -300,36 +320,45 @@ const toEdge = (p: Pos, dir: Dir): Pos => {
   return { row: p.row, col: COLUMN_COUNT - 1 };
 };
 
-// 배열 pad/trunc
+// padTo(arr, len, fill) 배열을 정확히 len 길이로 맞추는 함수
+// 모자라면 fill 값으로 뒤를 채움, 넘치면 뒤를 잘라냄
+// padTo([1,2], 5, 0) → [1,2,0,0,0]
+// padTo([1,2,3,4], 3, 9) → [1,2,3]
+// padTo([], 3, 'x') → ['x','x','x']
+// 핵심: 입력 배열을 건드리지 않고(불변) 지정 길이로 정규화.
+// loadLayout() 로딩 시 사용
 const padTo = <T>(arr: T[], len: number, fill: T) =>
   [...arr, ...Array(Math.max(0, len - arr.length)).fill(fill)].slice(0, len);
 
-// selection → 좌표 목록
+// rectToCells(sel) 사각형 영역을 개별 셀 목록(배열인데 Pos 타입이 들어있는 배열) 으로 풀기
+
+// ex) rectToCells({ sr: 1, sc: 2, er: 2, ec: 3 });
+// [ { row: 1, col: 2 }, { row: 1, col: 3 }, { row: 2, col: 2 }, { row: 2, col: 3 } ] 로 반환
 function rectToCells(sel: Rect): Array<Pos> {
-  const out: Pos[] = [];
+  const cells: Pos[] = [];
   for (let r = sel.sr; r <= sel.er; r++) {
-    for (let c = sel.sc; c <= sel.ec; c++) out.push({ row: r, col: c });
+    for (let c = sel.sc; c <= sel.ec; c++) cells.push({ row: r, col: c });
   }
-  return out;
+  return cells;
 }
 
-// 포커스 = 단일 selection 세팅
+// setFocusAsSingleSelection(set, pos) : 지금 클릭된 셀 하나만 focus & selection으로 만드는 함수
 function setFocusAsSingleSelection(
-  set: (p: Partial<SheetState>) => void,
+  set: (p: Partial<SheetState>) => void, // zustand set 함수
   pos: Pos
 ) {
   set({
-    focus: pos,
-    selection: { sr: pos.row, sc: pos.col, er: pos.row, ec: pos.col },
-    isSelecting: false,
+    focus: pos, // pos를 focus
+    selection: { sr: pos.row, sc: pos.col, er: pos.row, ec: pos.col }, // selection 한칸으로 만듦
+    isSelecting: false, // 드래그 중 아님
     anchor: null,
     head: null,
   });
 
-  useSheetStore.getState().syncMirrorToFocus();
+  useSheetStore.getState().syncMirrorToFocus(); // syncMirrorToFocus() : 현재 focus 셀의 값을 포뮬라 입력창에 복사하는 함수
 }
 
-// Shift 확장 시작 시 anchor/head 초기화
+// prepareAnchorHead({focus, anchor, head, selection}) 현재 상태(포커스/앵커/헤드/선택)를 바탕으로 확장 시작점과 끝점을 표준화하는 함수
 function prepareAnchorHead(args: {
   focus: Pos | null;
   anchor: Pos | null;
@@ -339,10 +368,13 @@ function prepareAnchorHead(args: {
   const { focus, anchor, head, selection } = args;
   if (!focus) return null;
 
-  const a = anchor ?? { row: focus.row, col: focus.col };
-  if (head) return { a, h: { ...head } };
+  const a = anchor ?? { row: focus.row, col: focus.col }; // a에 기존 anchor가 있으면 그대로 사용, 없다면 현재 focus를 anchor로 사용
+  if (head) return { a, h: { ...head } }; // head가 이미 있으면 위 a와 기존 head 그대로 반환
 
+  // head가 없고 selection이 있을 때
   if (selection) {
+    // anchor가 selection의 네 모서리 중 어디냐에 따라 반대편 모서리를 head로 세팅
+    // 현재 anchor를 고정한 채 selection의 반대편이 head가 되도록 초기화
     const s = selection;
     const tl: Pos = { row: s.sr, col: s.sc };
     const br: Pos = { row: s.er, col: s.ec };
@@ -352,10 +384,11 @@ function prepareAnchorHead(args: {
       return { a, h: { row: s.er, col: s.sc } };
     return { a, h: { row: s.sr, col: s.ec } };
   }
+  // selection도 없으면(단일 셀 상태) h를 focus셀로
   return { a, h: { row: focus.row, col: focus.col } };
 }
 
-// selection 갱신 payload
+// updateSelectionFrom(anchor, head) 선택 범위를 (anchor, head)로 확정하고, selection 객체를 업데이트하는 함수
 const updateSelectionFrom = (a: Pos, h: Pos) => ({
   anchor: a,
   head: h,
@@ -363,7 +396,8 @@ const updateSelectionFrom = (a: Pos, h: Pos) => ({
   isSelecting: false,
 });
 
-// 공통 확장 실행기 (전략: 한 칸/경계)
+// extendSelectionWith(get(), set(), Dir, strategy)
+// extendSelectionByArrow,extendSelectionByCtrlEdge 와 이어짐
 function extendSelectionWith(
   get: () => SheetState,
   set: (partial: Partial<SheetState>) => void,
@@ -376,11 +410,13 @@ function extendSelectionWith(
   const { a } = init;
   let { h } = init;
 
-  h = strategy === "step" ? step1(h, dir) : toEdge(h, dir);
+  // strategy가 "step" 이냐 "edge"냐에 따라서 step1(), toEdge() 함수 호출
+  const moveHead = strategy === "step" ? step1 : toEdge;
+  h = moveHead(h, dir);
+
   set(updateSelectionFrom(a, h));
 }
 
-let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 // 이 변수는 함수가 여러 번 불려도 계속 기억되어야 함
 // const -> 값 재할당 불가
 // let -> 다음 호출 때 새로운 타이머 ID로 덮어 써야 함
@@ -388,44 +424,53 @@ let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 //“연속 호출이 발생하면 타이머를 계속 밀어서,
 // 마지막 호출 후 ms 밀리초 뒤에만 실행된다.”
+let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 function debounceLayoutSave(fn: () => void, ms = 500) {
   if (__layoutSaveTimer) clearTimeout(__layoutSaveTimer);
   __layoutSaveTimer = setTimeout(fn, ms);
 }
 
+// 선택 영역 가로/세로 크기 계산
 const rectW = (r: Rect) => r.ec - r.sc + 1;
 const rectH = (r: Rect) => r.er - r.sr + 1;
 
+// 선택된 셀 값들을 2D 배열 형태로 추출
+// DB나 클립보드로 내보내기 전에 “표 모양 그대로” 가져오는 역할.
 function get2DGrid(sel: Rect): string[][] {
   const { getValue } = useSheetStore.getState();
   const h = rectH(sel);
   const w = rectW(sel);
-  const out: string[][] = Array.from({ length: h }, () =>
+
+  // 빈 2D 배열 초기화:
+  // h=3, w=4 → [['','','',''], ['','','',''], ['','','','']]
+  const grid: string[][] = Array.from({ length: h }, () =>
     Array<string>(w).fill("")
   );
 
+  //루프 돌며 실제 값 채우기:
+  // [['a','b','c','d'], ['e','f','g','h'], ['h','i','j','k']]
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
-      out[r][c] = getValue(sel.sr + r, sel.sc + c) ?? "";
+      grid[r][c] = getValue(sel.sr + r, sel.sc + c) ?? ""; // undefined면 "" 로 초기화
     }
   }
-
-  return out;
+  return grid;
 }
 
-// TSV란 “Tab-Separated Values” , 즉 탭 문자로 구분된 값들의 형식
-
+// 스프레드시트에서 “복사 → 붙여넣기” 할 때
+// 실제로 브라우저 클립보드에는 TSV(Tab-Separated Values) 형태로 저장됨
+// JS에서도 동일 포맷으로 변환해줘야 엑셀, 구글시트, ZapSheet끼리 서로 호환되는 복사/붙여넣기가 가능
 // 2D 배열 → TSV 문자열 (엑셀/시트 호환)
 const gridToTSV = (g: string[][]) => g.map((row) => row.join("\t")).join("\n"); // row 를 \t를 포함시켜서 잇고, 행들을 개행문자로 연결함
-
-// TSV 문자열 → 2D 배열
+// 엑셀 등에서 복사해 온 TSV 문자열을 우리 시트 내부 데이터 구조(string[][])로 복원
 export function tsvToGrid(tsv: string): string[][] {
   const lines = tsv.replace(/\r/g, "").split("\n"); // 윈도우에서는 줄바꿈이 \r\n 으로 되어 있을 수 있어서 \r 제거
   return lines.map((line) => line.split("\t")); // \n을 다시 행 단위로 나누고, \t을 쪼개 다시 열단위로 만듦
 }
 
-// ===== Undo/Redo용: 로컬 데이터 차이를 Supabase에 반영 =====
-
+// persistDataDiff(oldData,newData)
+// 로컬 상태 스냅샷 간 차이만 서버(Supabase)에 반영.
+// Undo/Redo 이후 “바뀐 셀만” 업서트/삭제 → 네트워크 최소화.
 async function persistDataDiff(
   oldData: Record<string, string>,
   newData: Record<string, string>
@@ -433,10 +478,16 @@ async function persistDataDiff(
   const toUpsert: Array<{ row: number; col: number; value: string }> = [];
   const toDelete: Array<{ row: number; col: number }> = [];
 
+  // oldData, newData의 모든 키를 Set으로 합침 → 비교 대상 완성.
   const keySet = new Set<string>([
     ...Object.keys(oldData),
     ...Object.keys(newData),
   ]);
+
+  //   before !== after일 때만 처리.
+  // 키 "r:c"를 분해해 숫자 row, col 추출.
+  // after === "" → 삭제 큐(toDelete)
+  // 그 외 → 업서트 큐(toUpsert)
   for (const k of keySet) {
     const before = oldData[k] ?? "";
     const after = newData[k] ?? "";
@@ -480,6 +531,7 @@ async function persistDataDiff(
   });
 }
 
+// 스타일 상태의 diff를 계산해 DB에 배치 업서트/삭제하는 함수
 async function persistStyleDiff(
   oldStyles: Record<string, CellStyle>,
   newStyles: Record<string, CellStyle>
@@ -543,6 +595,8 @@ async function persistStyleDiff(
   });
 }
 
+// 현재 시트 상태(SheetState)의 주요 부분을 “복사본(snapshot)”으로 만들어 저장.
+// undo,redo를 하기 위해 스냅샷을 만들어 놓는 용도
 function makeSnapshot(s: SheetState) {
   return {
     data: { ...s.data },
@@ -554,7 +608,9 @@ function makeSnapshot(s: SheetState) {
 
 // 테두리
 
-function normBorder(b?: BorderSpec): Required<BorderSpec> | null {
+// normalizeBorderSpec(BorderSpec : color,width,BorderLineStyle)
+// 부분적으로만 들어온 BorderSpec(색/두께/스타일 중 일부) → 완전한 스펙으로 채워 정규화해놓음.
+function normalizeBorderSpec(b?: BorderSpec): Required<BorderSpec> | null {
   if (!b) return null;
   return {
     color: b.color ?? "#222",
@@ -563,64 +619,75 @@ function normBorder(b?: BorderSpec): Required<BorderSpec> | null {
   };
 }
 
-function cssFrom(b?: BorderSpec): string | undefined {
-  const n = normBorder(b);
+// React style={{ borderTop: ... }}에 바로 꽂아 넣을 문자열이 필요
+// normalizeBorderSpec를 활용해 정규화해놓은 객체를 toBorderCss으로 미리 css언어로 만들어놓음
+function toBorderCss(b?: BorderSpec): string | undefined {
+  const n = normalizeBorderSpec(b);
   return n ? `${n.width}px ${n.style} ${n.color}` : undefined;
 }
 
-// 이웃 보정: 없으면 이웃의 반대 변을 가져온다
-function resolveEdge(
+// 테두리를 모든 셀에 네 변 다 그리면 겹침/이중선 생기기 때문에
+// 기본 철학: 항상 위·왼쪽 변만 그린다.
+// top 없으면 → 위 셀의 bottom을 가져옴.
+// left 없으면 → 왼 셀의 right를 가져옴.
+// right,bottom은 마지막 열/행 에서만 그린다.
+function resolveBorderEdge(
   row: number,
   col: number,
   edge: "top" | "left" | "right" | "bottom",
   getStyle: (r: number, c: number) => CellStyle | undefined
 ): BorderSpec | undefined {
-  const me = getStyle(row, col);
-  const mine = me?.border?.[edge];
+  const selfStyle = getStyle(row, col);
+  const selfEdge = selfStyle?.border?.[edge];
 
-  if (mine) return mine;
+  // 내가 직접 설정한 보더가 있다면 그걸 우선 적용
+  if (selfEdge) return selfEdge;
 
+  // 없을 경우, 위 셀의 bottom 보더를 대신 쓰기
   if (edge === "top" && row > 0) {
     return getStyle(row - 1, col)?.border?.bottom;
   }
+
+  // 위 셀의 bottom right 보더를 대신 쓰기
   if (edge === "left" && col > 0) {
     return getStyle(row, col - 1)?.border?.right;
   }
-  // 오른/아래는 기본적으로 이웃 보정하지 않음(마지막 행/열에서만 렌더)
   return undefined;
 }
 
-/**
- * 셀 보더 CSS를 계산해 반환.
- * 규칙:
- *  - 항상 top/left를 그림(없으면 위/왼 이웃의 bottom/right를 승계)
- *  - 마지막 열에서만 right를 그림, 마지막 행에서만 bottom을 그림
- *  - 이렇게 하면 이중 선 방지됨
- */
+// 위 border 유틸들이 실제로 렌더링에 적용되는 부분
+// React 컴포넌트에서 이렇게 쓰임
+// <div style={getBorderCss(row, col)} />
 export function getBorderCss(row: number, col: number): React.CSSProperties {
   const s = useSheetStore.getState();
   const getStyle = (r: number, c: number) => s.getCellStyle(r, c);
 
+  // 마지막 행·열 여부
+  // 맨 끝일 때만 right/bottom 테두리 직접 그리기 위해
   const isLastCol = col === COLUMN_COUNT - 1;
   const isLastRow = row === ROW_COUNT - 1;
 
-  const top = resolveEdge(row, col, "top", getStyle);
-  const left = resolveEdge(row, col, "left", getStyle);
+  // 상·좌 보정 처리
+  const top = resolveBorderEdge(row, col, "top", getStyle);
+  const left = resolveBorderEdge(row, col, "left", getStyle);
+
+  // 하·우는 예외 처리
   const right = isLastCol ? s.getCellStyle(row, col)?.border?.right : undefined;
   const bottom = isLastRow
     ? s.getCellStyle(row, col)?.border?.bottom
     : undefined;
 
+  // CSS 문자열로 변환 후 리턴
   return {
-    borderTop: cssFrom(top),
-    borderLeft: cssFrom(left),
-    borderRight: cssFrom(right),
-    borderBottom: cssFrom(bottom),
+    borderTop: toBorderCss(top),
+    borderLeft: toBorderCss(left),
+    borderRight: toBorderCss(right),
+    borderBottom: toBorderCss(bottom),
   };
 }
 
+// Cell 컴포넌트에서 필요한 보더만 최소로 계산해서, 불필요한 리렌더를 줄이기 위함
 export function useBorderCss(row: number, col: number): React.CSSProperties {
-  // 이 3가지만 구독하면 이웃 보정도 바로 반영됨
   const selfStyle = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
   const topStyle = useSheetStore((s) =>
     row > 0 ? s.stylesByCell[`${row - 1}:${col}`] : undefined
@@ -629,6 +696,8 @@ export function useBorderCss(row: number, col: number): React.CSSProperties {
     col > 0 ? s.stylesByCell[`${row}:${col - 1}`] : undefined
   );
 
+  // 마지막 행·열 여부
+  // 맨 끝일 때만 right/bottom 테두리 직접 그리기 위해
   const isLastCol = col === COLUMN_COUNT - 1;
   const isLastRow = row === ROW_COUNT - 1;
 
@@ -640,16 +709,16 @@ export function useBorderCss(row: number, col: number): React.CSSProperties {
       return undefined;
     };
 
-    const topSpec = resolveEdge(row, col, "top", getStyle);
-    const leftSpec = resolveEdge(row, col, "left", getStyle);
+    const topSpec = resolveBorderEdge(row, col, "top", getStyle);
+    const leftSpec = resolveBorderEdge(row, col, "left", getStyle);
     const rightSpec = isLastCol ? selfStyle?.border?.right : undefined;
     const bottomSpec = isLastRow ? selfStyle?.border?.bottom : undefined;
 
     return {
-      borderTop: cssFrom(topSpec),
-      borderLeft: cssFrom(leftSpec),
-      borderRight: cssFrom(rightSpec),
-      borderBottom: cssFrom(bottomSpec),
+      borderTop: toBorderCss(topSpec),
+      borderLeft: toBorderCss(leftSpec),
+      borderRight: toBorderCss(rightSpec),
+      borderBottom: toBorderCss(bottomSpec),
     } as React.CSSProperties;
   }, [row, col, selfStyle, topStyle, leftStyle, isLastCol, isLastRow]);
 }
