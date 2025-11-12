@@ -743,6 +743,7 @@ const nextSheetName = (existing: string[]) => {
 
 export const useSheetStore = create<SheetState>((set, get) => ({
   // Layout
+  // 각 열/행의 픽셀 크기를 들고 있는 상태 배열 초기값은 SheetConstants의 디폴트로 꽉 채움.
   columnWidths: Array.from({ length: COLUMN_COUNT }, () => DEFAULT_COL_WIDTH),
   rowHeights: Array.from({ length: ROW_COUNT }, () => DEFAULT_ROW_HEIGHT),
 
@@ -754,7 +755,43 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  //Layout Persist
+  // 행 높이 변경
+  setRowHeight: (row, height, isManual = false) => {
+    set((state) => {
+      const nextHeights = [...state.rowHeights];
+      const nextFlags = [...state.manualRowFlags];
+
+      nextHeights[row] = height;
+
+      //  사용자가 수동으로 조정했다면 플래그 true
+      if (isManual) {
+        nextFlags[row] = true;
+      }
+
+      //  행이 너무 작아졌다면 자동 모드로 되돌리기
+      if (height <= DEFAULT_ROW_HEIGHT + 5) {
+        nextFlags[row] = false;
+      }
+
+      return { rowHeights: nextHeights, manualRowFlags: nextFlags };
+    });
+
+    // (선택) 레이아웃 자동 저장: 0.5초 뒤 Supabase 반영
+    debounceLayoutSave(() => {
+      const { saveLayout } = get();
+      saveLayout().catch(console.error);
+    }, 500);
+  },
+
+  manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
+
+  resetManualRowFlags: () => {
+    set({
+      manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
+    });
+  },
+
+  //Layout Persist , Supabase에 행/열 레이아웃(높이·폭)을 저장하고 불러오는 슬라이스
   sheetId: "default",
   setSheetId: (id) => set({ sheetId: id }),
   isLayoutReady: false,
@@ -813,42 +850,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           isLayoutReady: true,
         });
       }
-    });
-  },
-
-  // 행 높이 변경
-  setRowHeight: (row, height, isManual = false) => {
-    set((state) => {
-      const nextHeights = [...state.rowHeights];
-      const nextFlags = [...state.manualRowFlags];
-
-      nextHeights[row] = height;
-
-      //  사용자가 수동으로 조정했다면 플래그 true
-      if (isManual) {
-        nextFlags[row] = true;
-      }
-
-      //  행이 너무 작아졌다면 자동 모드로 되돌리기
-      if (height <= DEFAULT_ROW_HEIGHT + 5) {
-        nextFlags[row] = false;
-      }
-
-      return { rowHeights: nextHeights, manualRowFlags: nextFlags };
-    });
-
-    // (선택) 레이아웃 자동 저장: 0.5초 뒤 Supabase 반영
-    debounceLayoutSave(() => {
-      const { saveLayout } = get();
-      saveLayout().catch(console.error);
-    }, 500);
-  },
-
-  manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
-
-  resetManualRowFlags: () => {
-    set({
-      manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
     });
   },
 
