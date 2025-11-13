@@ -77,6 +77,7 @@ type ResizeState = null | {
   startSize: number; // 시작 폭/높이
 };
 
+// 마우스로 열·행을 드래그해서 넓이/높이를 바꾸는 동안의 상태/로직을 담당하는 Slice
 type ResizeSlice = {
   resizing: ResizeState;
   startResizeCol: (index: number, clientX: number) => void;
@@ -97,8 +98,8 @@ type FocusSlice = {
 type SelectionSlice = {
   isSelecting?: boolean; // 드래깅 중인지
   anchor: Pos | null; // 드래깅 시작점
-  head: Pos | null; // 드래깅 끝점
-  selection: Rect | null; // 현재 선택 범위
+  head: Pos | null; // 반대쪽 끝점
+  selection: Rect | null; // Rect 형태로 정규화된 영역 (sr,sc,er,ec)
 
   startSelection: (pos: Pos, extend?: boolean) => void;
   updateSelection: (pos: Pos) => void;
@@ -115,14 +116,19 @@ type SelectionSlice = {
 };
 
 type EditSlice = {
-  editing: Pos | null;
+  editing: Pos | null; // 편집 중인 셀 좌표. null → 편집 모드 아님, 이걸 기반으로 Cell.tsx에서 <input> or <div> 렌더
+  // 편집 모드의 출처를 구분해서 selection,focus 충돌 등을 막기 위한 필드
   editingSource: "cell" | "formula" | null;
-  startEdit: (pos: Pos, source?: "cell" | "formula") => void;
+  // cell → 셀을 더블클릭하거나 Enter 눌러서 편집하기 시작한 경우
+  // formula → 포뮬라바(FormilaInput)에서 편집을 시작했을 때
+  // null → 편집 중 아님
+  startEdit: (pos: Pos, source?: "cell" | "formula") => void; // 해당 셀 편집 모드를 시작한다.ㄴ
   cancelEdit: () => void;
   commitEdit: (value: string) => void;
 };
 
 type DataSlice = {
+  // 모든 셀의 값을 메모리로 들고 있는 객체
   data: Record<string, string>; // key = `${row}:${col}`
   // 잠깐 Record<K, T> 란
   // “K라는 key를 가진 객체이며, 그 value는 T 타입이다.” 라는 의미
@@ -742,7 +748,7 @@ const nextSheetName = (existing: string[]) => {
 // ==============================
 
 export const useSheetStore = create<SheetState>((set, get) => ({
-  // Layout
+  // LayoutSlice : 화면 상태 + 즉시 반응 액션
   // 각 열/행의 픽셀 크기를 들고 있는 상태 배열 초기값은 SheetConstants의 디폴트로 꽉 채움.
   columnWidths: Array.from({ length: COLUMN_COUNT }, () => DEFAULT_COL_WIDTH),
   rowHeights: Array.from({ length: ROW_COUNT }, () => DEFAULT_ROW_HEIGHT),
@@ -791,11 +797,12 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  //Layout Persist , Supabase에 행/열 레이아웃(높이·폭)을 저장하고 불러오는 슬라이스
+  //Layout Persist Slice :시트 컨텍스트 + 서버 동기화
   sheetId: "default",
   setSheetId: (id) => set({ sheetId: id }),
   isLayoutReady: false,
 
+  // saveLayout() : 현재 화면의 행/열 크기를 Supabase에 저장
   saveLayout: async () => {
     await withUserId(async (uid) => {
       const { columnWidths, rowHeights, sheetId } = get();
@@ -803,17 +810,18 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       const payload = {
         user_id: uid,
         sheet_id: sheetId,
-        column_widths: columnWidths.map(Number),
-        row_heights: rowHeights.map(Number),
+        column_widths: columnWidths.map(Number), // 왜 .map(Number)? 배열 안에 문자열이 들어가도 Supabase에서 문제가 안 생게 강제 숫자화.
+        row_heights: rowHeights.map(Number), // 마찬가지
         updated_at: new Date().toISOString(),
       };
       const { error } = await supabase
         .from("sheet_layouts")
-        .upsert(payload, { onConflict: "user_id,sheet_id" });
+        .upsert(payload, { onConflict: "user_id,sheet_id" }); // user_id + sheet_id 조합이 PK처럼 작동. 있으면 update, 없으면 insert
       if (error) console.error("레이아웃 저장 실패:", error);
     });
   },
 
+  // Supabase에서 이 시트의 저장된 레이아웃을 가져와서 상태를 채운다.
   loadLayout: async () => {
     // 0) 아직 준비 안됨
     set({ isLayoutReady: false });
@@ -824,19 +832,27 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         .select("column_widths,row_heights")
         .eq("user_id", uid)
         .eq("sheet_id", get().sheetId)
-        .maybeSingle(); // 결과가 0개면 data: null, error: null. 1개면 그 행 반환
+        .maybeSingle(); // row 있으면 그 row 반환 , 없으면 data = null
       if (error) {
         console.error("레이아웃 불러오기 실패:", error);
       }
-
+      // data 가 있다면
       if (data) {
         const cw = Array.isArray(data.column_widths) ? data.column_widths : [];
         const rh = Array.isArray(data.row_heights) ? data.row_heights : [];
         set({
           columnWidths: padTo(cw, COLUMN_COUNT, 100),
           rowHeights: padTo(rh, ROW_COUNT, 25),
+          // 왜 padTo?
+          // cw.length !== COLUMN_COUNT일 수 있다:
+          // 예전에 만든 시트는 열/행 개수가 달랐을 수 있다
+          // DB에 저장된 배열이 더 짧을 수도 있다
+          // 혹은 사람이 실수로 DB를 지웠다가 일부만 남아 있을 수도
+          // 그래서 padTo로 길이를 딱 화면에 필요한 길이로 맞춰줌.
+          // 신뢰할 수 없는 DB 데이터를 클라이언트에서 안전하게 정규화하는 것.
           isLayoutReady: true,
         });
+        // data 가 없다면 디폴트로 초기화
       } else {
         set({
           columnWidths: Array.from(
@@ -853,15 +869,23 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  // Resize
-  // 현재 리사이징 중인지 여부를 담는 상태
-  // 리사이즈 시작 전엔 null, 드래그 중엔 { type, index, startClient, startSize } 형태로 값이 들어감.
+  // ResizeSlice : 마우스로 열·행을 드래그해서 넓이/높이를 바꾸는 동안의 상태/로직을 담당하는 Slice
+
+  // 아무 것도 안 드래그 중이면 null
+  // 드래그 중이면
+  //   {
+  //   type: "col" | "row";
+  //   index: number;        몇 번째 열/행인지
+  //   startClient: number;  드래그 시작 시점의 clientX/clientY
+  //   startSize: number;    드래그 시작 시점의 폭/높이
+  // }
   resizing: null,
 
-  // 열 리사이즈 시작 시 실행
+  // startResizeCol(index, clientX) : 열 리사이즈 드래그가 시작될 때, 기준 정보를 저장
   startResizeCol: (index, clientX) => {
-    // 현재 열의 초기 폭(w)을 가져오고,
-    const w = get().columnWidths[index];
+    const { columnWidths } = get();
+    // 현재 열의 시작 폭(w)을 가져오고,
+    const w = columnWidths[index];
 
     // resizing 상태에 "col", 열 인덱스, 드래그 시작 좌표(clientX), 시작 폭 저장.
     set({
@@ -869,48 +893,65 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  // 행 리사이즈 시작 시 실행
+  // 행 리사이즈 드래그가 시작될 때, 기준 정보를 저장
   startResizeRow: (index, clientY) => {
+    const { rowHeights } = get();
     // 현재 행의 초기 높이(h)를 가져오고,
-    const h = get().rowHeights[index];
+    const h = rowHeights[index];
 
     // resizing 상태에 "row", 행 인덱스, 시작 좌표(clientY), 시작 높이 저장.
+    // index: 몇 번째 열인지 (0-based)
+    // clientX: mousedown 이벤트에서 받은 event.clientX
     set({
       resizing: { type: "row", index, startClient: clientY, startSize: h },
     });
   },
 
-  // 마우스를 움직일 때마다 실행.
+  // updateResize(clientXY) : 드래그 중일 때, 마우스 이동에 따라 실시간으로 폭/높이 변경
+  // clientXY: 열 리사이즈일 땐 clientX, 행 리사이즈일 땐 clientY
   updateResize: (clientXY) => {
-    const rs = get().resizing;
-    if (!rs) return;
+    const { resizing } = get();
+    // 드래그중이 아니면 바로 return
+    if (!resizing) return;
 
     // delta = 마우스 이동거리 계산
-    const delta = clientXY - rs.startClient;
+    // 오른쪽/아래로 끌면 delta > 0
+    // 왼쪽/위로 끌면 delta < 0
+    const delta = clientXY - resizing.startClient;
 
-    // rs.type이 col일때
-    if (rs.type === "col") {
-      const next = Math.max(COL_MIN, Math.min(COL_MAX, rs.startSize + delta));
+    // resizing.type이 col일때
+    if (resizing.type === "col") {
+      const next = Math.max(
+        COL_MIN,
+        Math.min(COL_MAX, resizing.startSize + delta)
+      );
       const arr = get().columnWidths.slice(); // slice로 배열 복사, 불변성 유지
-      arr[rs.index] = next;
+      arr[resizing.index] = next;
       set({ columnWidths: arr });
 
-      // rs.type이 row일때
-    } else if (rs.type === "row") {
-      const next = Math.max(ROW_MIN, Math.min(ROW_MAX, rs.startSize + delta));
+      // resizing.type이 row일때
+    } else if (resizing.type === "row") {
+      const next = Math.max(
+        ROW_MIN,
+        Math.min(ROW_MAX, resizing.startSize + delta)
+      );
       const arr = get().rowHeights.slice(); // slice로 배열 복사, 불변성 유지
-      arr[rs.index] = next;
+      arr[resizing.index] = next;
       set({ rowHeights: arr });
     }
   },
 
+  // 드래그가 끝났을 때, 정리 + 수동 플래그 + 저장 예약
   endResize: () => {
-    const rs = get().resizing;
-    if (rs?.type === "row") {
-      get().setRowHeight(rs.index, get().rowHeights[rs.index], true); // ✅ isManual=true
+    const { resizing, rowHeights, setRowHeight } = get();
+
+    if (resizing?.type === "row") {
+      const currentHeight = rowHeights[resizing.index];
+      setRowHeight(resizing.index, currentHeight, true); // 이 행은 사용자가 직접 만진 행이므로 manualRowFlags[index] = true.
     }
 
     set({ resizing: null });
+
     // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
     debounceLayoutSave(() => {
       const { saveLayout } = get();
@@ -918,44 +959,67 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }, 500);
   },
 
-  // Focus
+  // FocusSlice
+
+  // focus :현재 포커스된 셀 위치.
   focus: { row: 0, col: 0 },
+
   setFocus: (pos) => {
     set({ focus: pos });
+
     if (pos) {
-      get().syncMirrorToFocus();
+      const { syncMirrorToFocus } = get();
+      syncMirrorToFocus(); // 현재 focus 셀의 값을 읽어서 formulaMirror에 동기화.
     } else {
       set({ formulaMirror: "" });
     }
   },
 
-  clearFocus: () => set({ focus: null }),
+  clearFocus: () => {
+    set({ focus: null });
+    set({ formulaMirror: "" });
+  },
 
+  // move(dir) : ↑↓←→ 키로 한 칸씩 포커스를 옮길 때 쓰는 함수
   move: (dir) => {
-    const focus = get().focus;
+    const { focus } = get();
     if (!focus) return;
 
-    setFocusAsSingleSelection(set, step1(focus, dir));
+    // step1(focus, dir) : dir 방향으로 한 칸 이동 + 시트 경계(clamp) 안으로 제한.
+    const nextPos = step1(focus, dir);
+
+    //setFocusAsSingleSelection(set, nextPos) : focus를 새 위치로 바꾸고, selection도 그 한 셀만 선택된 상태로 맞추고, isSelecting, anchor, head 초기화, 마지막에 syncMirrorToFocus()까지 호출.
+    setFocusAsSingleSelection(set, nextPos);
   },
 
+  // 해당 방향 끝(엣지)로 점프하는 이동
   moveCtrlEdge: (dir) => {
-    const focus = get().focus;
+    const { focus } = get();
     if (!focus) return;
 
-    setFocusAsSingleSelection(set, toEdge(focus, dir));
+    setFocusAsSingleSelection(set, toEdge(focus, dir)); // step1 대신 toEdge 사용
   },
 
-  // Selection
+  // SelectionSlice
+
+  // 앱 첫 진입 시 기본 선택은 (0,0) 한 칸짜리 영역.
   isSelecting: false,
   anchor: null,
   head: null,
   selection: { sr: 0, sc: 0, er: 0, ec: 0 },
 
+  // startSelection: (pos, extend = false) : 마우스로 셀을 클릭/드래그 시작할 때, selection 초기화
+  // extend = Shift 누른 상태인지 여부
   startSelection: (pos, extend = false) => {
     const { focus, setFocus, editingSource } = get();
     const isFormulaEditing = editingSource === "formula";
 
-    // 포뮬라 편집 중에는 anchor를 현재 anchor를 "드래그 시작 지점(pos)" 로 고정
+    // base : anchor 후보
+    // 포뮬라 편집 중이면:
+    // anchor = 그냥 pos (지금 찍은 그 셀 기준으로 드래그)
+    // 그 외:
+    // extend === true 이고 focus가 있다 → anchor = focus
+    // 아니면 anchor = pos (일반 클릭/드래그)
     const base = isFormulaEditing ? pos : extend && focus ? focus : pos;
 
     set({
@@ -964,13 +1028,19 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       head: pos,
       selection: normRect(base, pos),
     });
-    // ⚠️ 포뮬라 편집 중엔 절대 setFocus 금지 (mirror가 덮여씌워지는 문제 방지)
-    if (!extend && !isFormulaEditing) setFocus(base);
+    // 포뮬라 편집 중엔 절대 setFocus 금지 (mirror가 덮여씌워지는 문제 방지)
+    if (!extend && !isFormulaEditing) {
+      setFocus(base);
+    }
   },
 
+  // 마우스를 드래그하는 동안, 선택 영역을 계속 업데이트.
   updateSelection: (pos) => {
-    const anchor = get().anchor;
-    if (!get().isSelecting || !anchor) return;
+    const { anchor, isSelecting } = get();
+
+    // 드래그 중이 아니거나 anchor가 없다면 return
+    if (!isSelecting || !anchor) return;
+
     set({ head: pos, selection: normRect(anchor, pos) });
   },
 
@@ -978,7 +1048,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ isSelecting: false, anchor: null }); // selection은 유지해서 하이라이트 남김
   },
 
-  // Column 전체 선택
+  // 열 헤더 클릭/Shift+클릭 시 열 전체 선택.
   selectColumn: (col, extend = false) => {
     const { focus, setFocus, editingSource } = get();
     const isFormulaEditing = editingSource === "formula";
@@ -1034,9 +1104,10 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (!isFormulaEditing) setFocus({ row: r, col: 0 });
   },
 
-  //  좌상단 코너 클릭용 (전체)
+  // 전체 범위 Rect를 selection으로 설정.
   selectAll: () => {
     const { setFocus, editingSource } = get();
+
     const isFormulaEditing = editingSource === "formula";
 
     const rect: Rect = {
@@ -1046,51 +1117,68 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ec: COLUMN_COUNT - 1,
     };
     set({ selection: rect, isSelecting: false, anchor: null });
-    if (!isFormulaEditing) setFocus({ row: 0, col: 0 }); // ← 금지
+    if (!isFormulaEditing) setFocus({ row: 0, col: 0 });
   },
 
+  // isSelected(r,c) : 이 셀(r,c)이 현재 selection 영역 안에 있는가?
   isSelected: (r, c) => {
-    const sel = get().selection;
-    if (!sel) return false;
+    const { selection } = get();
 
-    const count = (sel.er - sel.sr + 1) * (sel.ec - sel.sc + 1); // count = 행 개수 * 열 개수 = 선택된 셀의 총 개수, 이 로직을 통해 선택된 셀들이 2개 이상일 때만 isSelected 적용
+    if (!selection) return false;
+
+    const count =
+      (selection.er - selection.sr + 1) * (selection.ec - selection.sc + 1); // count = 행 개수 * 열 개수 = 선택된 셀의 총 개수, 이 로직을 통해 선택된 셀들이 2개 이상일 때만 isSelected 적용
     if (count < 2) return false; // 단일 셀은 하이라이트 X
 
-    return r >= sel.sr && r <= sel.er && c >= sel.sc && c <= sel.ec;
+    return (
+      r >= selection.sr &&
+      r <= selection.er &&
+      c >= selection.sc &&
+      c <= selection.ec
+    );
   },
 
   clearSelection: () =>
     set({ selection: null, isSelecting: false, anchor: null }),
 
+  //  Shift+방향키 한 칸 확장
   extendSelectionByArrow: (dir) => {
     extendSelectionWith(get, set, dir, "step");
   },
 
+  // Shift+Ctrl+방향키로 끝까지 확장
   extendSelectionByCtrlEdge: (dir) => {
     extendSelectionWith(get, set, dir, "edge");
   },
 
-  // Edit
+  // EditSlice
   editing: null,
   editingSource: null,
-  startEdit: (pos, source = "cell") =>
-    set({ editing: pos, editingSource: source }),
+
+  // 해당 셀 편집 모드를 시작한다
+  startEdit: (pos, source = "cell") => {
+    set({ editing: pos, editingSource: source });
+  },
+
+  // Esc 등으로 편집 취소
   cancelEdit: () => set({ editing: null }),
 
   commitEdit: async (value) => {
-    const { editing, clearSelection, sheetId } = get();
+    const { editing, clearSelection, sheetId, pushHistory } = get();
+
+    // editing : 편집중인 셀 좌표
+    // 편집 중인 셀 좌표가 없거나, sheetId가 없다면 return
     if (!editing || !sheetId) return;
 
-    get().pushHistory();
+    pushHistory();
 
-    const { row, col } = editing;
+    const { row, col } = editing; // 편집중인 셀의 좌표
 
     // 로컬 상태 업데이트
     set((s) => ({
-      data: { ...s.data, [keyOf(row, col)]: value },
-      editing: null,
-      editingSource: null,
-      focus: { row, col },
+      data: { ...s.data, [keyOf(row, col)]: value }, // 시트 데이터에 새로운 문자열 넣음
+      editing: null, // 편집모드 종료
+      editingSource: null, // 편집모드 종료
     }));
     clearSelection(); // selection 영역 초기화
 
@@ -1108,13 +1196,21 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  // ---- Data ----
+  // DataSlice
   data: {},
-  getValue: (r, c) => get().data[keyOf(r, c)] ?? "",
-  setValue: (r, c, v) =>
-    set((s) => ({ data: { ...s.data, [keyOf(r, c)]: v } })),
+  getValue: (row, col) => get().data[keyOf(row, col)] ?? "",
 
-  // Supabase에서 data 불러오기
+  //  셀 값을 로컬 상태에 저장
+  // DB 저장하지 않고, redo undo push도 하지. 않음
+
+  setValue: (row, col, value) => {
+    const key = keyOf(row, col);
+    set((s) => {
+      return { data: { ...s.data, [key]: value } };
+    });
+  },
+
+  // Supabase의 cells 테이블을 조회해서 현재 시트의 모든 셀 값을 로딩
   loadCellData: async () => {
     await withUserId(async (uid) => {
       const { sheetId } = get();
@@ -1127,44 +1223,45 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         .eq("sheet_id", sheetId);
 
       if (error) {
-        console.error("데이터 불러오기 실패", error);
+        console.error("loadCellData 오류", error);
         return;
       }
 
       //  빈 배열일 때 굳이 {}로 덮어쓰고 깜빡임 유발할 필요가 없으면 early return
-      if (!data || data.length === 0) {
-        return;
-      }
+      if (!data || data.length === 0) return;
 
       // Supabase의 각 행(row,col,value) 을  key: `${row}:${col}` 형태로 변환
-      const obj: Record<string, string> = {};
+      const next: Record<string, string> = {};
       for (const cell of data ?? [])
-        obj[`${cell.row}:${cell.col}`] = cell.value ?? "";
+        next[`${cell.row}:${cell.col}`] = cell.value ?? "";
 
       // Zustand 상태에 반영
-      set({ data: obj });
-      console.log("[loadCellData]", {
-        sheetId: get().sheetId,
-        rows: data?.length,
-      });
+      set({ data: next });
     });
   },
 
+  // 선택된 영역(여러 칸) 을 'Delete' 키로 지우는 기능
   clearSelectionCells: async () => {
-    const sel = get().selection;
-    if (!sel) return;
+    const { selection, pushHistory, data } = get();
+    if (!selection) return;
 
-    get().pushHistory(); // ctrl z 하기 위해 히스토리에 추가
+    pushHistory(); // ctrl z 하기 위해 히스토리에 추가
 
     // 1) 로컬 상태 변경
-    const draft = { ...get().data };
-    const targets = rectToCells(sel);
-    for (const { row, col } of targets) draft[keyOf(row, col)] = "";
+    const draft = { ...data };
+    const targets = rectToCells(selection);
+
+    for (const { row, col } of targets) {
+      draft[keyOf(row, col)] = "";
+    }
+
     set({ data: draft });
 
-    // DB
+    // 2) DB 삭제
     await withUserId(async (uid) => {
       const { sheetId } = get();
+      if (!sheetId) return;
+
       const orClauses = targets.map(
         ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
       );
@@ -1178,56 +1275,63 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     });
   },
 
-  // ====== Clipboard Slice ======
+  // ClipboardSlice
   clipboard: null,
 
+  // 선택된 영역을 복사 형식(TSV) 으로 만듦
   copySelectionToTSV: () => {
-    const sel = get().selection;
-    if (!sel) return "";
-    const grid = get2DGrid(sel);
+    const { selection } = get();
+
+    if (!selection) return "";
+
+    const grid = get2DGrid(selection);
+
     set({ clipboard: grid });
+
     return gridToTSV(grid);
   },
 
   pasteGridFromSelection: async (grid) => {
     // 선택 영역 확인
-    const sel = get().selection;
-    if (!sel) return;
+    const { selection, pushHistory, data } = get();
+    if (!selection) return;
 
-    get().pushHistory();
+    pushHistory();
 
-    const prev = get().data;
-    const next = { ...prev };
+    const prev = data; // 기존 로컬 데이터
+    const next = { ...prev }; // 붙여넣기 후의 새로운 데이터
 
-    const h = grid.length; // column
-    const w = Math.max(...grid.map((r) => r.length)); // row
+    const h = grid.length; // 행 개수
+    const w = Math.max(...grid.map((r) => r.length)); // 열 개수
 
+    // grid 값을 selection의 좌상단부터 채워넣기
     for (let rr = 0; rr < h; rr++) {
       for (let cc = 0; cc < w; cc++) {
-        const r = clampRow(sel.sr + rr);
-        const c = clampCol(sel.sc + cc);
+        const r = clampRow(selection.sr + rr);
+        const c = clampCol(selection.sc + cc);
         const v = grid[rr][cc] ?? "";
         next[keyOf(r, c)] = v; // "2:3": "A" 이런 식으로 값 기록
       }
     }
 
+    // 상태 업데이트 (UI 반영)
     set({
       data: next,
       selection: {
-        sr: sel.sr,
-        sc: sel.sc,
-        er: clampRow(sel.sr + h - 1),
-        ec: clampCol(sel.sc + w - 1),
+        sr: selection.sr,
+        sc: selection.sc,
+        er: clampRow(selection.sr + h - 1),
+        ec: clampCol(selection.sc + w - 1),
       },
       isSelecting: false,
       anchor: null,
       head: null,
     });
-
+    // Supabase 반영
     await persistDataDiff(prev, next);
   },
 
-  // ===== History (undo) =====
+  // HistorySlice
   historyLimit: 50,
   historyPast: [],
   historyFuture: [],
@@ -1295,7 +1399,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     get().syncMirrorToFocus();
   },
 
-  // Formula Slice
+  // FormulaSlice
   formulaMirror: "",
 
   setFormulaInput: (v) =>
