@@ -16,6 +16,12 @@ export default function ToolBar() {
   const fontSize = useSheetStore((s) => s.getFontSizeForFocus());
   const setFontSize = useSheetStore((s) => s.setFontSize);
 
+  // 자동저장 관련
+  const autoSaveEnabled = useSheetStore((s) => s.autoSaveEnabled);
+  const setAutoSaveEnabled = useSheetStore((s) => s.setAutoSaveEnabled);
+  const saveAll = useSheetStore((s) => s.saveAll);
+  const hasUnsavedChanges = useSheetStore((s) => s.hasUnsavedChanges);
+
   // 로컬 상태로 입력 중인 값 관리
   const [tempFontSize, setTempFontSize] = useState<string>(String(fontSize));
 
@@ -122,6 +128,14 @@ export default function ToolBar() {
 
   const clearBorder = (mode?: "outline" | "inner" | "all") => {
     clearSelectionBorders(mode);
+  };
+
+  const toggleAutoSave = () => {
+    setAutoSaveEnabled(!autoSaveEnabled);
+  };
+
+  const handleSaveClick = () => {
+    void saveAll();
   };
 
   return (
@@ -307,6 +321,40 @@ export default function ToolBar() {
             <img src="/images/border-none.png" alt="" width={20} height={20} />
           </button>
         </div>
+      </div>
+      {/* ===== 자동저장 토글 + 수동 저장 ===== */}
+      <div className={styles.vDivider} />
+
+      <div className={styles.autoSaveGroup}>
+        <span className={styles.sectionTitle}>자동저장</span>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${
+            autoSaveEnabled ? styles.active : ""
+          }`}
+          onClick={toggleAutoSave}
+        >
+          <span className={styles.saveButtonText}>
+            {autoSaveEnabled ? "ON" : "OFF"}
+          </span>
+        </button>
+
+        {!autoSaveEnabled && (
+          <>
+            <button
+              type="button"
+              className={`${styles.saveBtn} ${
+                hasUnsavedChanges ? styles.saveBtnDirty : ""
+              }`}
+              onClick={handleSaveClick}
+            >
+              저장
+            </button>
+            {hasUnsavedChanges && (
+              <span className={styles.unsavedLabel}>저장 안 됨</span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

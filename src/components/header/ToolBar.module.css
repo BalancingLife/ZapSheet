@@ -275,3 +275,72 @@
   height: 20px;
   display: block;
 }
+
+/* === 자동저장 섹션 === */
+.autoSaveGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.autoSaveGroup .sectionTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: #444;
+}
+
+/* 자동저장 ON/OFF 토글 버튼 */
+.toggleBtn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  background: #fafafa;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toggleBtn:hover {
+  background: #f0f0f0;
+}
+
+.toggleBtn.active {
+  background: #d7eaff;
+  border-color: #3c8cff;
+  color: #0b53b0;
+  font-weight: 600;
+}
+
+/* 수동 저장 버튼 */
+.saveBtn {
+  padding: 3px 12px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, border 0.15s ease, color 0.15s ease;
+}
+
+.saveBtn:hover {
+  background: #f7f7f7;
+}
+
+/* 변경사항 있을 때 강조 */
+.saveBtnDirty {
+  border-color: #ff5b5b;
+  color: #d80000;
+  font-weight: 600;
+}
+
+.saveBtnDirty:hover {
+  background: #ffecec;
+}
+
+/* “저장 안 됨” 표시 */
+.unsavedLabel {
+  font-size: 11px;
+  color: #d60000;
+  font-weight: 600;
+}

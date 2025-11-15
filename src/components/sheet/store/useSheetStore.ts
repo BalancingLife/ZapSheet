@@ -226,6 +226,18 @@ type SheetListSlice = {
   loadSheetsMeta: () => Promise<void>;
 };
 
+type SaveSlice = {
+  autoSaveEnabled: boolean;
+  setAutoSaveEnabled: (enabled: boolean) => void;
+
+  hasUnsavedChanges: boolean; // 수동 모드 일 때, 저장 안 된 변경이 있는 지
+  lastSavedData: Record<string, string>;
+  lastSavedStyles: Record<string, CellStyle>;
+
+  // "저장" 버튼이 호출할 함수
+  saveAll: () => Promise<void>;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -237,7 +249,8 @@ type SheetState = LayoutSlice &
   HistorySlice &
   FormulaSlice &
   StyleSlice &
-  SheetListSlice;
+  SheetListSlice &
+  SaveSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -780,11 +793,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       return { rowHeights: nextHeights, manualRowFlags: nextFlags };
     });
 
-    // (선택) 레이아웃 자동 저장: 0.5초 뒤 Supabase 반영
-    debounceLayoutSave(() => {
-      const { saveLayout } = get();
-      saveLayout().catch(console.error);
-    }, 500);
+    const { autoSaveEnabled, saveLayout } = get();
+
+    if (autoSaveEnabled) {
+      // (선택) 레이아웃 자동 저장: 0.5초 뒤 Supabase 반영
+      debounceLayoutSave(() => {
+        saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      // 수동 모드: 변경만 표시
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   manualRowFlags: Array.from({ length: ROW_COUNT }, () => false),
@@ -941,7 +960,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // 드래그가 끝났을 때, 정리 + 수동 플래그 + 저장 예약
   endResize: () => {
-    const { resizing, rowHeights, setRowHeight } = get();
+    const { resizing, rowHeights, setRowHeight, autoSaveEnabled, saveLayout } =
+      get();
 
     if (resizing?.type === "row") {
       const currentHeight = rowHeights[resizing.index];
@@ -950,11 +970,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     set({ resizing: null });
 
-    // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
-    debounceLayoutSave(() => {
-      const { saveLayout } = get();
-      saveLayout().catch(console.error);
-    }, 500);
+    if (autoSaveEnabled) {
+      // 열/행 리사이즈 후 손 떼면 0.5초 이후에 DB 저장
+      debounceLayoutSave(() => {
+        saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // FocusSlice
@@ -1162,7 +1185,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   cancelEdit: () => set({ editing: null }),
 
   commitEdit: async (value) => {
-    const { editing, clearSelection, sheetId, pushHistory } = get();
+    const { editing, clearSelection, sheetId, pushHistory, autoSaveEnabled } =
+      get();
 
     // editing : 편집중인 셀 좌표
     // 편집 중인 셀 좌표가 없거나, sheetId가 없다면 return
@@ -1180,18 +1204,24 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }));
     clearSelection(); // selection 영역 초기화
 
-    // DB 반영
-    await withUserId(async (uid) => {
-      const { sheetId } = get();
+    if (autoSaveEnabled) {
+      // 자동저장 모드일 때만 즉시 DB 반영
 
-      const { error } = await supabase
-        .from("cells")
-        .upsert([{ row, col, value, user_id: uid, sheet_id: sheetId }], {
-          onConflict: "sheet_id,row,col,user_id",
-        });
-      if (error) console.error(" Supabase 저장 실패:", error);
-      else console.log(`저장됨: (${row}, ${col}) → ${value}`);
-    });
+      await withUserId(async (uid) => {
+        const { sheetId } = get();
+
+        const { error } = await supabase
+          .from("cells")
+          .upsert([{ row, col, value, user_id: uid, sheet_id: sheetId }], {
+            onConflict: "sheet_id,row,col,user_id",
+          });
+        if (error) console.error(" Supabase 저장 실패:", error);
+        else console.log(`저장됨: (${row}, ${col}) → ${value}`);
+      });
+    } else {
+      // 수동 모드: 더티 플래그만
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // DataSlice
@@ -1206,6 +1236,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set((s) => {
       return { data: { ...s.data, [key]: value } };
     });
+
+    const { autoSaveEnabled } = get();
+    if (!autoSaveEnabled) {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // Supabase의 cells 테이블을 조회해서 현재 시트의 모든 셀 값을 로딩
@@ -1226,7 +1261,15 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       }
 
       //  빈 배열일 때 굳이 {}로 덮어쓰고 깜빡임 유발할 필요가 없으면 early return
-      if (!data || data.length === 0) return;
+      if (!data || data.length === 0) {
+        // 로딩은 했지만 비어있는 시트 → "저장된 스냅샷도 비어있다"라고 맞춰줌
+        set({
+          data: {},
+          lastSavedData: {},
+          hasUnsavedChanges: false,
+        });
+        return;
+      }
 
       // Supabase의 각 행(row,col,value) 을  key: `${row}:${col}` 형태로 변환
       const next: Record<string, string> = {};
@@ -1234,13 +1277,13 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         next[`${cell.row}:${cell.col}`] = cell.value ?? "";
 
       // Zustand 상태에 반영
-      set({ data: next });
+      set({ data: next, lastSavedData: next, hasUnsavedChanges: false });
     });
   },
 
   // 선택된 영역(여러 칸) 을 'Delete' 키로 지우는 기능
   clearSelectionCells: async () => {
-    const { selection, pushHistory, data } = get();
+    const { selection, pushHistory, data, autoSaveEnabled } = get();
     if (!selection) return;
 
     pushHistory(); // ctrl z 하기 위해 히스토리에 추가
@@ -1255,22 +1298,25 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     set({ data: draft });
 
-    // 2) DB 삭제
-    await withUserId(async (uid) => {
-      const { sheetId } = get();
-      if (!sheetId) return;
+    if (autoSaveEnabled) {
+      await withUserId(async (uid) => {
+        const { sheetId } = get();
+        if (!sheetId) return;
 
-      const orClauses = targets.map(
-        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
-      );
-      const { error } = await supabase
-        .from("cells")
-        .delete()
-        .eq("user_id", uid)
-        .eq("sheet_id", sheetId)
-        .or(orClauses.join(","));
-      if (error) console.error("clearSelectionCells 삭제 실패:", error);
-    });
+        const orClauses = targets.map(
+          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+        );
+        const { error } = await supabase
+          .from("cells")
+          .delete()
+          .eq("user_id", uid)
+          .eq("sheet_id", sheetId)
+          .or(orClauses.join(","));
+        if (error) console.error("clearSelectionCells 삭제 실패:", error);
+      });
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // ClipboardSlice
@@ -1291,7 +1337,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   pasteGridFromSelection: async (grid) => {
     // 선택 영역 확인
-    const { selection, pushHistory, data } = get();
+    const { selection, pushHistory, data, autoSaveEnabled } = get();
     if (!selection) return;
 
     pushHistory();
@@ -1325,8 +1371,12 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       anchor: null,
       head: null,
     });
-    // Supabase 반영
-    await persistDataDiff(prev, next);
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prev, next);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // HistorySlice
@@ -1353,6 +1403,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       data,
       stylesByCell,
       syncMirrorToFocus,
+      autoSaveEnabled,
     } = get();
     if (historyPast.length === 0) return;
 
@@ -1383,10 +1434,13 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       historyFuture: [...historyFuture, nowSnap],
     });
 
-    // prev와 last의 차이만 계산하여 DB에 반영함
-    await persistDataDiff(prevData, last.data);
-    await persistStyleDiff(prevStyles, last.stylesByCell);
-    syncMirrorToFocus(); // 포뮬라 입력창 동기화
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, last.data);
+      await persistStyleDiff(prevStyles, last.stylesByCell);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
+    syncMirrorToFocus();
   },
 
   // 되돌린 것을 다시 되돌리기
@@ -1397,6 +1451,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       data,
       stylesByCell,
       syncMirrorToFocus,
+      autoSaveEnabled,
     } = get();
     if (historyFuture.length === 0) return;
 
@@ -1418,8 +1473,12 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       historyFuture: historyFuture.slice(0, historyFuture.length - 1),
     });
 
-    await persistDataDiff(prevData, next.data);
-    await persistStyleDiff(prevStyles, next.stylesByCell);
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, next.data);
+      await persistStyleDiff(prevStyles, next.stylesByCell);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
     syncMirrorToFocus();
   },
 
@@ -1515,7 +1574,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // 선택된 영역에 style 적용
   applyStyleToSelection: async (patch) => {
-    const { pushHistory, selection, focus, stylesByCell } = get();
+    const { pushHistory, selection, focus, stylesByCell, autoSaveEnabled } =
+      get();
     pushHistory();
 
     const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
@@ -1537,27 +1597,32 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ stylesByCell: nextMap });
 
     // 2) 비차단 저장 (폰트사이즈 저장 로직과 동일 테이블 재사용)
-    void withUserId(async (uid) => {
-      const { sheetId } = get();
-      const rows = touched.map(({ row, col }) => ({
-        user_id: uid,
-        sheet_id: sheetId,
-        row,
-        col,
-        style_json: nextMap[keyOf(row, col)],
-        updated_at: new Date().toISOString(),
-      }));
+    if (autoSaveEnabled) {
+      void withUserId(async (uid) => {
+        const { sheetId } = get();
+        const rows = touched.map(({ row, col }) => ({
+          user_id: uid,
+          sheet_id: sheetId,
+          row,
+          col,
+          style_json: nextMap[keyOf(row, col)],
+          updated_at: new Date().toISOString(),
+        }));
 
-      const { error } = await supabase
-        .from("cell_styles")
-        .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+        const { error } = await supabase
+          .from("cell_styles")
+          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
 
-      if (error) console.error("cell_styles upsert 실패:", error);
-    });
+        if (error) console.error("cell_styles upsert 실패:", error);
+      });
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   clearSelectionStyles: async (keys) => {
-    const { pushHistory, selection, focus, stylesByCell } = get();
+    const { pushHistory, selection, focus, stylesByCell, autoSaveEnabled } =
+      get();
     pushHistory();
 
     const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
@@ -1598,39 +1663,44 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ stylesByCell: nextMap });
 
     // 2) 비차단 저장 (삭제와 업데이트 분기)
-    void withUserId(async (uid) => {
-      const { sheetId } = get();
+    if (autoSaveEnabled) {
+      // 2) 비차단 저장 (삭제와 업데이트 분기)
+      void withUserId(async (uid) => {
+        const { sheetId } = get();
 
-      // upsert
-      if (toUpsertRemote.length > 0) {
-        const rows = toUpsertRemote.map(({ row, col, style }) => ({
-          user_id: uid,
-          sheet_id: sheetId,
-          row,
-          col,
-          style_json: style,
-          updated_at: new Date().toISOString(),
-        }));
-        const { error } = await supabase
-          .from("cell_styles")
-          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
-        if (error) console.error("cell_styles upsert 실패:", error);
-      }
+        // upsert
+        if (toUpsertRemote.length > 0) {
+          const rows = toUpsertRemote.map(({ row, col, style }) => ({
+            user_id: uid,
+            sheet_id: sheetId,
+            row,
+            col,
+            style_json: style,
+            updated_at: new Date().toISOString(),
+          }));
+          const { error } = await supabase
+            .from("cell_styles")
+            .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+          if (error) console.error("cell_styles upsert 실패:", error);
+        }
 
-      // delete
-      if (toDeleteRemote.length > 0) {
-        const orClauses = toDeleteRemote.map(
-          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
-        );
-        const { error } = await supabase
-          .from("cell_styles")
-          .delete()
-          .eq("user_id", uid)
-          .eq("sheet_id", sheetId)
-          .or(orClauses.join(","));
-        if (error) console.error("cell_styles delete 실패:", error);
-      }
-    });
+        // delete
+        if (toDeleteRemote.length > 0) {
+          const orClauses = toDeleteRemote.map(
+            ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+          );
+          const { error } = await supabase
+            .from("cell_styles")
+            .delete()
+            .eq("user_id", uid)
+            .eq("sheet_id", sheetId)
+            .or(orClauses.join(","));
+          if (error) console.error("cell_styles delete 실패:", error);
+        }
+      });
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   getFontSize: (row, col) => {
@@ -1647,7 +1717,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   setFontSize: (next) => {
-    const { pushHistory, selection, focus, stylesByCell } = get();
+    const { pushHistory, selection, focus, stylesByCell, autoSaveEnabled } =
+      get();
 
     pushHistory();
     const n = Math.round(clamp(next, 0, 72));
@@ -1689,25 +1760,30 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     }
 
     // 3) 저장은 비차단으로 뒤로 보냄 (레이아웃 확정 후)
-    void (async () => {
-      await withUserId(async (uid) => {
-        const { sheetId } = get();
-        const rows = targets.map(({ row, col }) => ({
-          user_id: uid,
-          sheet_id: sheetId,
-          row,
-          col,
-          style_json: map[keyOf(row, col)],
-          updated_at: new Date().toISOString(),
-        }));
+    if (autoSaveEnabled) {
+      void (async () => {
+        await withUserId(async (uid) => {
+          const { sheetId } = get();
+          const rows = targets.map(({ row, col }) => ({
+            user_id: uid,
+            sheet_id: sheetId,
+            row,
+            col,
+            style_json: map[keyOf(row, col)],
+            updated_at: new Date().toISOString(),
+          }));
 
-        const { error } = await supabase
-          .from("cell_styles")
-          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
-        if (error) console.error("cell_styles upsert 실패:", error);
-      });
-    })();
+          const { error } = await supabase
+            .from("cell_styles")
+            .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+          if (error) console.error("cell_styles upsert 실패:", error);
+        });
+      })();
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
+
   loadCellStyles: async () => {
     await withUserId(async (uid) => {
       const { sheetId } = get();
@@ -1726,12 +1802,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       for (const rec of data ?? []) {
         map[keyOf(rec.row, rec.col)] = rec.style_json as CellStyle;
       }
-      set({ stylesByCell: map });
+      set({
+        stylesByCell: map,
+        lastSavedStyles: map,
+        hasUnsavedChanges: false,
+      });
     });
   },
 
   applyBorderToSelection: async (mode, spec) => {
-    const { pushHistory, selection, focus, stylesByCell } = get();
+    const { pushHistory, selection, focus, stylesByCell, autoSaveEnabled } =
+      get();
     pushHistory();
 
     const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
@@ -1795,42 +1876,48 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ stylesByCell: map });
 
     // 비차단 저장
-    void withUserId(async (uid) => {
-      const { sheetId } = get();
-      const rows = [
-        ...new Set(touch.map(({ row, col }) => `${row}:${col}`)),
-      ].map((k) => {
-        const [r, c] = k.split(":").map(Number);
-        return {
-          user_id: uid,
-          sheet_id: sheetId,
-          row: r,
-          col: c,
-          style_json: map[k],
-          updated_at: new Date().toISOString(),
-        };
-      });
+    if (autoSaveEnabled) {
+      // 비차단 저장
+      void withUserId(async (uid) => {
+        const { sheetId } = get();
+        const rows = [
+          ...new Set(touch.map(({ row, col }) => `${row}:${col}`)),
+        ].map((k) => {
+          const [r, c] = k.split(":").map(Number);
+          return {
+            user_id: uid,
+            sheet_id: sheetId,
+            row: r,
+            col: c,
+            style_json: map[k],
+            updated_at: new Date().toISOString(),
+          };
+        });
 
-      const { error } = await supabase
-        .from("cell_styles")
-        .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
-      if (error) console.error("cell_styles border upsert 실패:", error);
-    });
+        const { error } = await supabase
+          .from("cell_styles")
+          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+        if (error) console.error("cell_styles border upsert 실패:", error);
+      });
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   clearSelectionBorders: async (mode) => {
-    get().pushHistory();
+    const { pushHistory, selection, focus, autoSaveEnabled, stylesByCell } =
+      get();
 
-    const sel = get().selection;
-    const focus = get().focus;
-    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    pushHistory();
+
+    const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
     if (targets.length === 0) return;
 
-    const mapPrev = get().stylesByCell;
+    const mapPrev = stylesByCell;
     const map: Record<string, CellStyle> = { ...mapPrev };
 
-    const box: Rect | null = sel
-      ? { ...sel }
+    const box: Rect | null = selection
+      ? { ...selection }
       : focus
       ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
       : null;
@@ -1907,39 +1994,44 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set({ stylesByCell: map });
 
     // 비차단 저장(업서트/삭제 분리)
-    void withUserId(async (uid) => {
-      const { sheetId } = get();
+    if (autoSaveEnabled) {
+      // 비차단 저장(업서트/삭제 분리)
+      void withUserId(async (uid) => {
+        const { sheetId } = get();
 
-      if (touchUpsert.length > 0) {
-        const rows = touchUpsert.map(({ row, col, style }) => ({
-          user_id: uid,
-          sheet_id: sheetId,
-          row,
-          col,
-          style_json: style,
-          updated_at: new Date().toISOString(),
-        }));
-        const { error } = await supabase
-          .from("cell_styles")
-          .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
-        if (error)
-          console.error("cell_styles border clear upsert 실패:", error);
-      }
+        if (touchUpsert.length > 0) {
+          const rows = touchUpsert.map(({ row, col, style }) => ({
+            user_id: uid,
+            sheet_id: sheetId,
+            row,
+            col,
+            style_json: style,
+            updated_at: new Date().toISOString(),
+          }));
+          const { error } = await supabase
+            .from("cell_styles")
+            .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+          if (error)
+            console.error("cell_styles border clear upsert 실패:", error);
+        }
 
-      if (touchDelete.length > 0) {
-        const orClauses = touchDelete.map(
-          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
-        );
-        const { error } = await supabase
-          .from("cell_styles")
-          .delete()
-          .eq("user_id", uid)
-          .eq("sheet_id", sheetId)
-          .or(orClauses.join(","));
-        if (error)
-          console.error("cell_styles border clear delete 실패:", error);
-      }
-    });
+        if (touchDelete.length > 0) {
+          const orClauses = touchDelete.map(
+            ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+          );
+          const { error } = await supabase
+            .from("cell_styles")
+            .delete()
+            .eq("user_id", uid)
+            .eq("sheet_id", sheetId)
+            .or(orClauses.join(","));
+          if (error)
+            console.error("cell_styles border clear delete 실패:", error);
+        }
+      });
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // ---- SheetListSlice ----
@@ -2077,6 +2169,37 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         get().loadCellStyles(),
       ]);
       get().syncMirrorToFocus();
+    });
+  },
+
+  // SaveSlice
+  autoSaveEnabled: true,
+  setAutoSaveEnabled: (enabled) => {
+    set({ autoSaveEnabled: enabled });
+  },
+  hasUnsavedChanges: false,
+  lastSavedData: {},
+  lastSavedStyles: {},
+
+  // 전체 저장 함수
+  saveAll: async () => {
+    const { lastSavedData, lastSavedStyles, data, stylesByCell, saveLayout } =
+      get();
+
+    // 1) 셀 값 diff 저장
+    await persistDataDiff(lastSavedData, data);
+
+    // 2) 스타일 diff 저장
+    await persistStyleDiff(lastSavedStyles, stylesByCell);
+
+    // 3) 레이아웃 저장 (sheet_layouts 전체 upsert)
+    await saveLayout();
+
+    // 4) "방금 상태"를 새 스냅샷으로 기록 + 더티 플래그 초기화
+    set({
+      lastSavedData: { ...data },
+      lastSavedStyles: { ...stylesByCell },
+      hasUnsavedChanges: false,
     });
   },
 }));
