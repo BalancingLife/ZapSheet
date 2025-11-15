@@ -150,8 +150,7 @@ type ClipboardSlice = {
 };
 
 type HistorySlice = {
-  /** 최대 저장 스냅샷 개수 */
-  historyLimit: number;
+  historyLimit: number; // 최대 Undo 기록 개수
   /** 과거 스냅샷 스택 */
   historyPast: Array<{
     data: Record<string, string>;
@@ -180,8 +179,7 @@ type FormulaSlice = {
   syncMirrorToFocus: () => void;
   resolveCellNumeric: (a1: string, depth?: number) => number | null;
 
-  /** FormulaInput 내부 커서 위치(0-based) */
-  formulaCaret: number;
+  formulaCaret: number; // formulaInput 내 커서 위치
   /** caret 갱신 */
   setFormulaCaret: (pos: number) => void;
   /**
@@ -1340,19 +1338,33 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const { historyPast, historyLimit } = get();
     const snap = makeSnapshot(get());
     const nextPast = [...historyPast, snap];
+
+    // 과거 스택 50개 넘으면 앞에서 하나 제거
     if (nextPast.length > historyLimit) nextPast.shift();
 
     set({ historyPast: nextPast, historyFuture: [] });
   },
 
+  // 한 단계 과거 스냅샷으로 되돌리기
   undo: async () => {
-    const { historyPast, historyFuture } = get();
+    const {
+      historyPast,
+      historyFuture,
+      data,
+      stylesByCell,
+      syncMirrorToFocus,
+    } = get();
     if (historyPast.length === 0) return;
 
-    const prevData = get().data; // DB diff용 (변경 전)
-    const prevStyles = get().stylesByCell;
+    // 되돌리기 전 상태 저장
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    // 되돌릴 스냅샷 가져오기
     const last = historyPast[historyPast.length - 1]; // 복원할 스냅샷
-    const nowSnap = makeSnapshot(get()); // 현재 스냅샷을 future로 보관
+
+    // redo도 생각해서 지금 상태 스냅샷
+    const nowSnap = makeSnapshot(get());
 
     set({
       data: last.data,
@@ -1363,21 +1375,33 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       anchor: null,
       head: null,
       editing: null,
+
+      //마지막 스냅샷(지금 되돌아온 그 스냅샷)을 제거
       historyPast: historyPast.slice(0, historyPast.length - 1),
+
+      // historyFuture에 현재(nowSnap) 넣기
       historyFuture: [...historyFuture, nowSnap],
     });
 
+    // prev와 last의 차이만 계산하여 DB에 반영함
     await persistDataDiff(prevData, last.data);
     await persistStyleDiff(prevStyles, last.stylesByCell);
-    get().syncMirrorToFocus();
+    syncMirrorToFocus(); // 포뮬라 입력창 동기화
   },
 
+  // 되돌린 것을 다시 되돌리기
   redo: async () => {
-    const { historyPast, historyFuture } = get();
+    const {
+      historyPast,
+      historyFuture,
+      data,
+      stylesByCell,
+      syncMirrorToFocus,
+    } = get();
     if (historyFuture.length === 0) return;
 
-    const prevData = get().data; // DB diff용
-    const prevStyles = get().stylesByCell;
+    const prevData = data; // DB diff용
+    const prevStyles = stylesByCell;
     const next = historyFuture[historyFuture.length - 1]; // 적용할 스냅샷
     const nowSnap = makeSnapshot(get()); // 현재 상태는 past에 쌓기
 
@@ -1396,35 +1420,41 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     await persistDataDiff(prevData, next.data);
     await persistStyleDiff(prevStyles, next.stylesByCell);
-    get().syncMirrorToFocus();
+    syncMirrorToFocus();
   },
 
   // FormulaSlice
   formulaMirror: "",
 
+  //포뮬라 입력창의 텍스트를 업데이트하는데, 동일한 값이면 다시 렌더링하지 않음
   setFormulaInput: (v) =>
     set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v })),
 
+  // 포커스 셀 -> 포뮬라 창 동기화
   syncMirrorToFocus: () => {
-    const f = get().focus;
-    if (!f) return;
-    const v = get().getValue(f.row, f.col) ?? "";
-    set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v }));
+    const { focus, getValue } = get();
+    if (!focus) return;
+    const v = getValue(focus.row, focus.col) ?? "";
+    set((s) => (s.formulaMirror === v ? {} : { formulaMirror: v })); // 다를 때만 → { formulaMirror: v }로 변경
   },
 
+  //셀 찾아가서 → 그 셀 값이 수식이면 재귀로 평가 → 결과가 숫자면 number, 아니면 null을 돌려주는 함수
   resolveCellNumeric: (a1: string, depth: number = 0): number | null => {
+    const { getValue, resolveCellNumeric } = get();
     if (depth > 50) return null; // 순환 가드
 
-    const pos = a1ToPos(a1);
+    const pos = a1ToPos(a1); // A1 -> (0,0)
     if (!pos) return null;
 
-    const rawStr: string = get().getValue(pos.row, pos.col) ?? "";
+    const rawStr = getValue(pos.row, pos.col) ?? "";
     if (!rawStr) return null;
 
+    // =으로 시작하면 수식으로 판단
     if (rawStr.trim().startsWith("=")) {
+      // ealuateFormulaStrict : "= 1 + 2" 형태에서 앞의 "="를 떼고 사칙연산만 평가. 실패 시 null 반환
       const v = evaluateFormulaStrict(rawStr, {
         resolveCell: (innerA1: string): number | null =>
-          get().resolveCellNumeric(innerA1, depth + 1),
+          resolveCellNumeric(innerA1, depth + 1),
       });
       return v == null || !isFinite(v) ? null : v;
     }
@@ -1433,9 +1463,12 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     return isFinite(n) ? n : null;
   },
 
+  // 포뮬라 입력창(FormulaInput)의 커서 위치를 저장하는 숫자.
   formulaCaret: 0,
+
   setFormulaCaret: (pos) => set({ formulaCaret: Math.max(0, pos) }),
 
+  // 현재 캐럿 위치에 ref(A1, A1:B5 등) 삽입
   insertRefAtCaret: (ref, opts) => {
     const s = get();
     const src = s.formulaMirror ?? "";
@@ -1480,15 +1513,16 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     return get().stylesByCell[keyOf(row, col)];
   },
 
+  // 선택된 영역에 style 적용
   applyStyleToSelection: async (patch) => {
-    get().pushHistory();
-    const sel = get().selection;
-    const focus = get().focus;
-    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    const { pushHistory, selection, focus, stylesByCell } = get();
+    pushHistory();
+
+    const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
     if (targets.length === 0) return;
 
     // 1) 로컬 상태 즉시 업데이트
-    const nextMap = { ...get().stylesByCell };
+    const nextMap = { ...stylesByCell };
     const touched: Array<{ row: number; col: number }> = [];
 
     for (const { row, col } of targets) {
@@ -1523,14 +1557,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   clearSelectionStyles: async (keys) => {
-    get().pushHistory();
-    const sel = get().selection;
-    const focus = get().focus;
-    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    const { pushHistory, selection, focus, stylesByCell } = get();
+    pushHistory();
+
+    const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
     if (targets.length === 0) return;
 
     // 1) 로컬 상태 갱신
-    const prevMap = get().stylesByCell;
+    const prevMap = stylesByCell;
     const nextMap: Record<string, CellStyle> = { ...prevMap };
     const toDeleteRemote: Array<{ row: number; col: number }> = [];
     const toUpsertRemote: Array<{
@@ -1606,22 +1640,24 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   getFontSizeForFocus: () => {
-    const f = get().focus;
-    if (!f) return DEFAULT_FONT_SIZE;
-    return get().getFontSize(f.row, f.col);
+    const { focus, getFontSize } = get();
+
+    if (!focus) return DEFAULT_FONT_SIZE;
+    return getFontSize(focus.row, focus.col);
   },
 
   setFontSize: (next) => {
-    get().pushHistory();
+    const { pushHistory, selection, focus, stylesByCell } = get();
+
+    pushHistory();
     const n = Math.round(clamp(next, 0, 72));
 
-    const sel = get().selection;
-    const focus = get().focus;
+    const sel = selection;
     const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
     if (targets.length === 0) return;
 
     // 1) stylesByCell 즉시 갱신 (동기)
-    const map = { ...get().stylesByCell };
+    const map = { ...stylesByCell };
     for (const { row, col } of targets) {
       const key = keyOf(row, col);
       const prev = map[key] ?? {};
@@ -1695,18 +1731,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   applyBorderToSelection: async (mode, spec) => {
-    get().pushHistory();
+    const { pushHistory, selection, focus, stylesByCell } = get();
+    pushHistory();
 
-    const sel = get().selection;
-    const focus = get().focus;
-    const targets = sel ? rectToCells(sel) : focus ? [focus] : [];
+    const targets = selection ? rectToCells(selection) : focus ? [focus] : [];
     if (targets.length === 0) return;
 
-    const map = { ...get().stylesByCell };
+    const map = { ...stylesByCell };
 
     // 선택 박스 경계(있으면) 계산
-    const box: Rect | null = sel
-      ? { ...sel }
+    const box: Rect | null = selection
+      ? { ...selection }
       : focus
       ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
       : null;
@@ -1914,7 +1949,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // --- SheetListSlice actions ---
   addSheet: async (name) => {
     await withUserId(async (uid) => {
-      const { sheets } = get();
+      const { sheets, setCurrentSheet } = get();
+
       const id = genId();
       const newName = name ?? nextSheetName(sheets.map((s) => s.name));
       const order = sheets.length ? sheets.length : 0;
@@ -1929,7 +1965,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       const newSheets = [...sheets, { id, name: newName }];
       set({ sheets: newSheets });
-      get().setCurrentSheet(id);
+      setCurrentSheet(id);
     });
   },
 
@@ -2007,7 +2043,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       const nextId = next.id; // <- string 확정
 
       set({ sheets: newSheets });
-      get().setCurrentSheet(nextId); // ✅ string만 전달
+      get().setCurrentSheet(nextId); //
     });
   },
 
