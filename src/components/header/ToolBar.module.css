@@ -114,13 +114,6 @@
   margin-left: 4px;
 }
 
-/* 마지막 “테두리” 텍스트 */
-.toolBarConatiner > div:last-child {
-  margin-left: auto;
-  color: #777;
-  font-size: 13px;
-}
-
 /* 텍스트 스타일 그룹 */
 .textStyleGroup {
   display: inline-flex;
@@ -276,7 +269,6 @@
   display: block;
 }
 
-/* === 자동저장 섹션 === */
 .autoSaveGroup {
   display: flex;
   align-items: center;
@@ -290,29 +282,72 @@
   color: #444;
 }
 
-/* 자동저장 ON/OFF 토글 버튼 */
-.toggleBtn {
-  padding: 3px 10px;
-  font-size: 12px;
-  border: 1px solid #ccc;
-  background: #fafafa;
-  border-radius: 4px;
+/* 토글 전체 캡슐 */
+.autoSaveToggle {
+  position: relative;
+  width: 52px;
+  height: 26px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
   cursor: pointer;
-  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.toggleBtn:hover {
-  background: #f0f0f0;
+/* ON 상태 */
+.autoSaveOn {
+  background-color: #0ba546;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 
-.toggleBtn.active {
-  background: #d7eaff;
-  border-color: #3c8cff;
-  color: #0b53b0;
+/* OFF 상태 */
+.autoSaveOff {
+  background-color: #f2f2f2;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* 안쪽 ON/OFF 텍스트 */
+.autoSaveLabel {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: left;
+  pointer-events: none;
 }
 
-/* 수동 저장 버튼 */
+/* OFF일 때는 회색 텍스트 + 오른쪽 정렬 느낌 */
+.autoSaveOff .autoSaveLabel {
+  color: #b5b5b5;
+  text-align: right;
+}
+
+/* 동그란 썸(원형 버튼) */
+.autoSaveThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s ease;
+}
+
+/* ON일 때 오른쪽으로 슬라이드 */
+.autoSaveOn .autoSaveThumb {
+  transform: translateX(26px);
+}
+
+/* 수동 저장 버튼/라벨은 기존 그대로 사용 */
 .saveBtn {
   padding: 3px 12px;
   font-size: 12px;
@@ -327,7 +362,6 @@
   background: #f7f7f7;
 }
 
-/* 변경사항 있을 때 강조 */
 .saveBtnDirty {
   border-color: #ff5b5b;
   color: #d80000;
@@ -338,7 +372,6 @@
   background: #ffecec;
 }
 
-/* “저장 안 됨” 표시 */
 .unsavedLabel {
   font-size: 11px;
   color: #d60000;

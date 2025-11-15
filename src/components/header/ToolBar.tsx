@@ -229,6 +229,8 @@ export default function ToolBar() {
         <button onClick={resetBgColor}>Reset</button>
       </div>
 
+      <div className={styles.vDivider} />
+
       {/* ===== 테두리 ===== */}
       <div className={styles.borderGroup}>
         <span className={styles.sectionTitle}>테두리</span>
@@ -327,16 +329,19 @@ export default function ToolBar() {
 
       <div className={styles.autoSaveGroup}>
         <span className={styles.sectionTitle}>자동저장</span>
+
         <button
           type="button"
-          className={`${styles.toggleBtn} ${
-            autoSaveEnabled ? styles.active : ""
+          className={`${styles.autoSaveToggle} ${
+            autoSaveEnabled ? styles.autoSaveOn : styles.autoSaveOff
           }`}
           onClick={toggleAutoSave}
+          aria-pressed={autoSaveEnabled}
         >
-          <span className={styles.saveButtonText}>
+          <span className={styles.autoSaveLabel}>
             {autoSaveEnabled ? "ON" : "OFF"}
           </span>
+          <span className={styles.autoSaveThumb} />
         </button>
 
         {!autoSaveEnabled && (
