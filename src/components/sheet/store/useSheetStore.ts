@@ -234,8 +234,8 @@ type SaveSlice = {
   lastSavedData: Record<string, string>;
   lastSavedStyles: Record<string, CellStyle>;
 
-  // "저장" 버튼이 호출할 함수
   saveAll: () => Promise<void>;
+  loadUserSettings: () => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -2079,6 +2079,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     void (async () => {
       await Promise.all([
         get().loadLayout(),
+        get().loadUserSettings(),
         get().loadCellData(),
         get().loadCellStyles(),
       ]);
@@ -2165,6 +2166,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       await Promise.all([
         get().loadLayout(),
+        get().loadUserSettings(),
         get().loadCellData(),
         get().loadCellStyles(),
       ]);
@@ -2174,8 +2176,23 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // SaveSlice
   autoSaveEnabled: true,
-  setAutoSaveEnabled: (enabled) => {
+  setAutoSaveEnabled: async (enabled) => {
     set({ autoSaveEnabled: enabled });
+
+    await withUserId(async (uid) => {
+      const { error } = await supabase.from("user_settings").upsert(
+        {
+          user_id: uid,
+          auto_save_enabled: enabled,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+      if (error) {
+        console.error("user_settings upsert 실패:", error);
+      }
+    });
   },
   hasUnsavedChanges: false,
   lastSavedData: {},
@@ -2200,6 +2217,25 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       lastSavedData: { ...data },
       lastSavedStyles: { ...stylesByCell },
       hasUnsavedChanges: false,
+    });
+  },
+
+  loadUserSettings: async () => {
+    await withUserId(async (uid) => {
+      const { data, error } = await supabase
+        .from("user_settings")
+        .select("auto_save_enabled")
+        .eq("user_id", uid)
+        .maybeSingle();
+
+      if (error) {
+        console.error("user_settings load 실패:", error);
+        return;
+      }
+
+      set({
+        autoSaveEnabled: data?.auto_save_enabled ?? true,
+      });
     });
   },
 }));
