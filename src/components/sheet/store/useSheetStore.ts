@@ -455,6 +455,99 @@ function debounceLayoutSave(fn: () => void, ms = 500) {
 const rectW = (r: Rect) => r.ec - r.sc + 1;
 const rectH = (r: Rect) => r.er - r.sr + 1;
 
+// 주어진 좌표가 Rect 내부인지 확인
+const isInsideRect = (rect: Rect, r: number, c: number) =>
+  r >= rect.sr && r <= rect.er && c >= rect.sc && c <= rect.ec;
+
+// 숫자 시리즈 패턴 타입
+type NumberFillPattern = {
+  axis: "row" | "col"; // "row" = 세로 방향 (행 인덱스 기준), "col" = 가로 방향 (열 인덱스 기준)
+  base: number; // 기준값 (sr 또는 sc 위치의 값)
+  step: number; // 공차 (v[i+1] - v[i])
+  startIndex: number; // 기준 인덱스 (axis === "row" -> sr, axis === "col" -> sc)
+};
+
+/**
+ * 선택 영역(src)과 타겟(tgt), 현재 데이터맵(prevData)를 기준으로
+ * "숫자 등차 시리즈" 패턴이 있는지 추론.
+ *
+ * 전제:
+ * - src는 1차원(한 행 또는 한 열)이어야 함
+ * - tgt도 같은 축(같은 행 or 같은 열)으로만 확장된 경우에만 시리즈 적용
+ * - src 내부 값들이 전부 number로 파싱 가능하고, 공차가 일정해야 함
+ *
+ * 조건을 만족하지 못하면 null을 반환 → 기존 타일링 로직으로 처리
+ */
+function inferNumberFillPattern(
+  src: Rect,
+  tgt: Rect,
+  data: Record<string, string>
+): NumberFillPattern | null {
+  // 1) 같은 열에서만 세로로 확장하는지?
+  const sameCol = src.sc === src.ec && tgt.sc === tgt.ec;
+  // 2) 같은 행에서만 가로로 확장하는지?
+  const sameRow = src.sr === src.er && tgt.sr === tgt.er;
+
+  // "확장" 여부 (src 바깥으로 나갔는지)
+  const verticalExt = sameCol && (tgt.sr < src.sr || tgt.er > src.er); // 위/아래로 더 넓어졌는지
+  const horizontalExt = sameRow && (tgt.sc < src.sc || tgt.ec > src.ec); // 좌/우로 더 넓어졌는지
+
+  if (!verticalExt && !horizontalExt) return null;
+
+  const axis: "row" | "col" = verticalExt ? "row" : "col";
+  const values: number[] = [];
+
+  if (axis === "row") {
+    // 세로 패턴: 같은 열(sc)에 대해 sr..er 까지 값 수집
+    const col = src.sc;
+    for (let r = src.sr; r <= src.er; r++) {
+      const raw = data[keyOf(r, col)];
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return null;
+      values.push(n);
+    }
+  } else {
+    // 가로 패턴: 같은 행(sr)에 대해 sc..ec 까지 값 수집
+    const row = src.sr;
+    for (let c = src.sc; c <= src.ec; c++) {
+      const raw = data[keyOf(row, c)];
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return null;
+      values.push(n);
+    }
+  }
+
+  if (values.length === 0) return null;
+
+  // 길이가 1인 경우: 한 개 숫자만 있으면 step = 0 (상수 시리즈)
+  if (values.length === 1) {
+    return {
+      axis,
+      base: values[0],
+      step: 0,
+      startIndex: axis === "row" ? src.sr : src.sc,
+    };
+  }
+
+  // 길이 2 이상: 등차가 일정한지 체크
+  const step = values[1] - values[0];
+  for (let i = 1; i < values.length - 1; i++) {
+    if (values[i + 1] - values[i] !== step) {
+      // 공차가 다르면 "숫자 시리즈"로 보지 않고 그냥 복사
+      return null;
+    }
+  }
+
+  return {
+    axis,
+    base: values[0],
+    step,
+    startIndex: axis === "row" ? src.sr : src.sc,
+  };
+}
+
 // 선택된 셀 값들을 2D 배열 형태로 추출
 // DB나 클립보드로 내보내기 전에 “표 모양 그대로” 가져오는 역할.
 function get2DGrid(sel: Rect): string[][] {
@@ -1202,6 +1295,10 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ec: clampCol(target.ec),
     };
 
+    // --- 여기서 "숫자 시리즈" 패턴 시도 ---
+    // 조건을 만족하면 NumberFillPattern, 아니면 null
+    const numberPattern = inferNumberFillPattern(src, tgt, data);
+
     // Undo 스냅샷
     pushHistory();
     const prevData = data;
@@ -1220,13 +1317,30 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         const srcKey = keyOf(srcR, srcC);
         const dstKey = keyOf(r, c);
 
-        const v = prevData[srcKey] ?? "";
+        // ==== 값 채우기 로직 분기 ====
+        let v: string;
+
+        if (numberPattern && !isInsideRect(src, r, c)) {
+          // 1) 숫자 시리즈 패턴이 있고, "원본 selection 바깥"인 셀
+          //    → 등차수열 기반으로 새 값을 계산
+
+          const index = numberPattern.axis === "row" ? r : c; // 세로면 row, 가로면 col 기준
+          const offset = index - numberPattern.startIndex;
+          const n = numberPattern.base + numberPattern.step * offset;
+          v = String(n);
+        } else {
+          // 2) 패턴이 없거나, src 내부 셀은 기존 값 그대로
+          v = prevData[srcKey] ?? "";
+        }
+
+        // 실제 데이터 반영
         if (!v) {
           delete nextData[dstKey];
         } else {
           nextData[dstKey] = v;
         }
 
+        // 스타일은 기존 "타일링" 규칙 그대로 유지
         const s = prevStyles[srcKey];
         if (!s) {
           delete nextStyles[dstKey];
