@@ -207,14 +207,15 @@ function parseFuncCall(src: string): { name: string; args: string } | null {
 
 function isSupportedFunc(
   name: string
-): name is "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT" {
+): name is "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT" | "PRODUCT" {
   const n = name.toUpperCase();
   return (
     n === "SUM" ||
     n === "AVERAGE" ||
     n === "MIN" ||
     n === "MAX" ||
-    n === "COUNT"
+    n === "COUNT" ||
+    n === "PRODUCT"
   );
 }
 
@@ -281,7 +282,7 @@ function collectNumericArgs(
 // Aggregate = 소프트웨어 개발에서 관련된 객체들의 집합
 
 function evalAggregate(
-  name: "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT",
+  name: "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT" | "PRODUCT",
   argsStr: string,
   resolveCell?: (a1: string) => number | null
 ): number | null {
@@ -314,6 +315,13 @@ function evalAggregate(
     }
     case "COUNT": {
       return n; // 대상 0개면 0
+    }
+
+    case "PRODUCT": {
+      if (n === 0) return null;
+      let p = 1;
+      for (let i = 0; i < n; i++) p *= nums[i];
+      return roundSmart(p);
     }
   }
 }
