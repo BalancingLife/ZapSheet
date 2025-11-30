@@ -113,6 +113,8 @@ type SelectionSlice = {
   isSelected: (r: number, c: number) => boolean;
   extendSelectionByArrow: (dir: Dir) => void; // ADD
   extendSelectionByCtrlEdge: (dir: Dir) => void; // ADD
+
+  fillSelectionTo: (target: Rect) => Promise<void> | void;
 };
 
 type EditSlice = {
@@ -1170,6 +1172,78 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // Shift+Ctrl+방향키로 끝까지 확장
   extendSelectionByCtrlEdge: (dir) => {
     extendSelectionWith(get, set, dir, "edge");
+  },
+
+  // 자동 채우기 구조, 현재 selection을 target 영역에 반복 채우기. (패턴은 아직)
+  fillSelectionTo: async (target) => {
+    const { selection, data, stylesByCell, autoSaveEnabled, pushHistory } =
+      get();
+
+    if (!selection) return;
+
+    const src = selection;
+    const srcH = rectH(src);
+    const srcW = rectW(src);
+    if (srcH <= 0 || srcW <= 0) return;
+
+    // target도 시트 안으로 클램프
+    const tgt: Rect = {
+      sr: clampRow(target.sr),
+      sc: clampCol(target.sc),
+      er: clampRow(target.er),
+      ec: clampCol(target.ec),
+    };
+
+    // Undo 스냅샷
+    pushHistory();
+    const prevData = data;
+    const prevStyles = stylesByCell;
+    const nextData: Record<string, string> = { ...prevData };
+    const nextStyles: Record<string, CellStyle> = { ...prevStyles };
+    // source 패턴을 target 전체에 타일링
+    for (let r = tgt.sr; r <= tgt.er; r++) {
+      for (let c = tgt.sc; c <= tgt.ec; c++) {
+        // source rect 안의 상대 위치 계산 (주기적으로 반복)
+        const relRow = (((r - src.sr) % srcH) + srcH) % srcH;
+        const relCol = (((c - src.sc) % srcW) + srcW) % srcW;
+        const srcR = src.sr + relRow;
+        const srcC = src.sc + relCol;
+
+        const srcKey = keyOf(srcR, srcC);
+        const dstKey = keyOf(r, c);
+
+        const v = prevData[srcKey] ?? "";
+        if (!v) {
+          delete nextData[dstKey];
+        } else {
+          nextData[dstKey] = v;
+        }
+
+        const s = prevStyles[srcKey];
+        if (!s) {
+          delete nextStyles[dstKey];
+        } else {
+          nextStyles[dstKey] = s;
+        }
+      }
+    }
+
+    // 상태 반영 + selection을 채워진 target으로 갱신
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      selection: tgt,
+      isSelecting: false,
+      anchor: null,
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   // EditSlice

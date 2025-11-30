@@ -1,23 +1,24 @@
-import React from "react";
 import styles from "./SelectionOverlay.module.css";
 import { useSheetStore } from "./store/useSheetStore";
+
+type Props = {
+  columnWidths: number[];
+  rowHeights: number[];
+  onFillHandleMouseDown?: () => void;
+};
 
 export default function SelectionOverlay({
   columnWidths,
   rowHeights,
-  gridRef,
-}: {
-  columnWidths: number[];
-  rowHeights: number[];
-  gridRef: React.RefObject<HTMLDivElement | null>;
-}) {
+  onFillHandleMouseDown,
+}: Props) {
   const selection = useSheetStore((s) => s.selection);
   const isSelecting = useSheetStore((s) => s.isSelecting);
   if (!selection) return null;
 
   const count =
     (selection.er - selection.sr + 1) * (selection.ec - selection.sc + 1);
-  const show = count >= 1 && !isSelecting;
+  const show = count >= 2 && !isSelecting;
   if (!show) return null;
 
   const sumRange = (arr: number[], l: number, r: number) => {
@@ -33,12 +34,28 @@ export default function SelectionOverlay({
   const height = sumRange(rowHeights, selection.sr, selection.er);
 
   return (
-    <div
-      className={styles.selectionOverlay}
-      style={{ left, top, width, height }}
-    >
-      {/* Fill Handle */}
-      <div className={styles.fillHandle} />
-    </div>
+    <>
+      {/* 선택 영역 테두리 */}
+      <div
+        className={styles.selectionOverlay}
+        style={{ left, top, width, height }}
+      />
+
+      {/* 우하단 Fill Handle */}
+      {onFillHandleMouseDown && (
+        <div
+          className={styles.fillHandle}
+          style={{
+            left: left + width - 4, // 살짝 안쪽으로
+            top: top + height - 4,
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onFillHandleMouseDown();
+          }}
+        />
+      )}
+    </>
   );
 }
