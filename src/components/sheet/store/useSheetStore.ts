@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { supabase } from "@/lib/supabaseClient";
 import { a1ToPos } from "@/utils/a1Utils";
 import { evaluateFormulaStrict } from "@/utils/formula";
+import { shiftFormulaByOffset } from "@/utils/shiftFormula";
+import { isNumericValue } from "@/utils/numberFormat";
 
 import {
   ROW_COUNT,
@@ -1307,6 +1309,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       tgt.sc === src.sc &&
       tgt.ec === src.ec &&
       (tgt.sr !== src.sr || tgt.er !== src.er);
+
     const horizontalOnly =
       tgt.sr === src.sr &&
       tgt.er === src.er &&
@@ -1329,7 +1332,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           arr != null ? inferNumberFillPattern(arr, "row", src.sr) : null;
         colPatterns.push(pat);
       }
-    } else if (mode === "horizontal") {
+
       // 각 행마다 [1,3,5] 시리즈 따로 분석
       for (let r = src.sr; r <= src.er; r++) {
         const arr = collectRowValues(src, r, data);
@@ -1346,6 +1349,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const nextData: Record<string, string> = { ...prevData };
     const nextStyles: Record<string, CellStyle> = { ...prevStyles };
 
+    // selection이 1×1인지 확인 → 수식 자동 채우기 조건
+    const isSingleCell = srcH === 1 && srcW === 1;
+
     // --- 실제 채우기 루프 ---
     for (let r = tgt.sr; r <= tgt.er; r++) {
       for (let c = tgt.sc; c <= tgt.ec; c++) {
@@ -1361,59 +1367,72 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         const styleSrcC = src.sc + relCol;
         const styleSrcKey = keyOf(styleSrcR, styleSrcC);
         const styleSrc = prevStyles[styleSrcKey];
+
         if (styleSrc) {
           nextStyles[dstKey] = styleSrc;
         } else {
           delete nextStyles[dstKey];
         }
 
-        // 값 계산
+        // ----------------------
+        // ⭐ 1) 수식 자동 채우기
+        // ----------------------
+        const srcKey = keyOf(styleSrcR, styleSrcC);
+        const srcVal = prevData[srcKey] ?? "";
+
+        if (
+          isSingleCell &&
+          typeof srcVal === "string" &&
+          srcVal.startsWith("=")
+        ) {
+          const dRow = r - src.sr;
+          const dCol = c - src.sc;
+          const shifted = shiftFormulaByOffset(srcVal, dRow, dCol);
+
+          if (!shifted) delete nextData[dstKey];
+          else nextData[dstKey] = shifted;
+
+          continue; // 숫자 패턴/타일링 로직은 스킵
+        }
+
+        // ----------------------
+        // ⭐ 2) 숫자 시리즈 패턴 채우기
+        // ----------------------
         let v: string | null = null;
 
         if (insideSrc) {
-          // 원본 selection 안은 그대로 유지
           v = prevData[dstKey] ?? "";
         } else if (mode === "vertical") {
-          // 세로 방향 자동 채우기
-          const idx = c - src.sc; // 몇 번째 열인지
+          const idx = c - src.sc;
           const pat = colPatterns[idx] ?? null;
 
-          if (pat) {
-            // 시리즈 패턴 있음 → 등차 수열 계산
-            const index = r; // axis=row → 인덱스는 row
+          if (pat && isNumericValue(srcVal)) {
+            const index = r;
             const offset = index - pat.startIndex;
             const num = pat.base + pat.step * offset;
             v = String(num);
           } else {
-            // 패턴 못 찾으면 기존 타일링
-            const dataSrcKey = keyOf(styleSrcR, c);
-            v = prevData[dataSrcKey] ?? "";
+            v = prevData[keyOf(styleSrcR, c)] ?? "";
           }
         } else if (mode === "horizontal") {
-          // 가로 방향 자동 채우기
-          const idx = r - src.sr; // 몇 번째 행인지
+          const idx = r - src.sr;
           const pat = rowPatterns[idx] ?? null;
 
-          if (pat) {
-            const index = c; // axis=col → 인덱스는 col
+          if (pat && isNumericValue(srcVal)) {
+            const index = c;
             const offset = index - pat.startIndex;
             const num = pat.base + pat.step * offset;
             v = String(num);
           } else {
-            const dataSrcKey = keyOf(r, styleSrcC);
-            v = prevData[dataSrcKey] ?? "";
+            v = prevData[keyOf(r, styleSrcC)] ?? "";
           }
         } else {
-          // 타일링 모드 (기존 fillSelectionTo와 동일)
           const dataSrcKey = keyOf(styleSrcR, styleSrcC);
           v = prevData[dataSrcKey] ?? "";
         }
 
-        if (!v) {
-          delete nextData[dstKey];
-        } else {
-          nextData[dstKey] = v;
-        }
+        if (!v) delete nextData[dstKey];
+        else nextData[dstKey] = v;
       }
     }
 
