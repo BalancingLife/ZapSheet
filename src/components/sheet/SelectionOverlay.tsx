@@ -1,12 +1,15 @@
+import React from "react";
 import styles from "./SelectionOverlay.module.css";
 import { useSheetStore } from "./store/useSheetStore";
 
 export default function SelectionOverlay({
   columnWidths,
   rowHeights,
+  gridRef,
 }: {
   columnWidths: number[];
   rowHeights: number[];
+  gridRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const selection = useSheetStore((s) => s.selection);
   const isSelecting = useSheetStore((s) => s.isSelecting);
@@ -14,7 +17,7 @@ export default function SelectionOverlay({
 
   const count =
     (selection.er - selection.sr + 1) * (selection.ec - selection.sc + 1);
-  const show = count >= 2 && !isSelecting;
+  const show = count >= 1 && !isSelecting;
   if (!show) return null;
 
   const sumRange = (arr: number[], l: number, r: number) => {
@@ -33,6 +36,9 @@ export default function SelectionOverlay({
     <div
       className={styles.selectionOverlay}
       style={{ left, top, width, height }}
-    />
+    >
+      {/* Fill Handle */}
+      <div className={styles.fillHandle} />
+    </div>
   );
 }

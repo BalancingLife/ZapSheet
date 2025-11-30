@@ -2,10 +2,11 @@ import styles from "./Grid.module.css";
 import Cell from "./Cell";
 import { ROW_COUNT, COLUMN_COUNT } from "./SheetConstants";
 import SelectionOverlay from "./SelectionOverlay";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useSheetStore } from "./store/useSheetStore";
 
 export default function Grid() {
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const columnWidths = useSheetStore((s) => s.columnWidths);
   const rowHeights = useSheetStore((s) => s.rowHeights);
 
@@ -24,6 +25,7 @@ export default function Grid() {
   return (
     <div className={styles.container}>
       <div
+        ref={gridRef}
         className={styles.grid}
         style={{
           gridTemplateColumns: colTemplate,
@@ -31,7 +33,11 @@ export default function Grid() {
         }}
       >
         {cells}
-        <SelectionOverlay columnWidths={columnWidths} rowHeights={rowHeights} />
+        <SelectionOverlay
+          columnWidths={columnWidths}
+          rowHeights={rowHeights}
+          gridRef={gridRef}
+        />
       </div>
     </div>
   );

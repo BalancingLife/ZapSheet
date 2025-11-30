@@ -4,3 +4,15 @@
   box-shadow: inset 0 0 0 1px rgb(26, 115, 232); /* 안쪽 border 만들기 */
   box-sizing: border-box;
 }
+
+.fillHandle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #1a73e8; /* 구글시트처럼 파란 네모 */
+  border: 1px solid white;
+  box-sizing: border-box;
+  bottom: -3px; /* selection 박스 오른쪽 아래 모서리 */
+  right: -3px;
+  cursor: crosshair;
+}
