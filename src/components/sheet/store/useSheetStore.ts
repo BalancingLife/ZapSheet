@@ -22,6 +22,15 @@ export type SheetMeta = { id: string; name: string };
 export type Pos = { row: number; col: number };
 export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
 export type Dir = "up" | "down" | "left" | "right";
+
+// 숫자 시리즈 패턴 타입
+type NumberFillPattern = {
+  axis: "row" | "col"; // "row" = 세로 방향 (행 인덱스 기준), "col" = 가로 방향 (열 인덱스 기준)
+  base: number; // 시리즈의 시작 값
+  step: number; // 공차
+  startIndex: number; // 사적 안덱스 (행/엷 ㅓㄴ호)
+};
+
 export type CellStyle = {
   fontSize?: number;
   textColor?: string;
@@ -455,17 +464,43 @@ function debounceLayoutSave(fn: () => void, ms = 500) {
 const rectW = (r: Rect) => r.ec - r.sc + 1;
 const rectH = (r: Rect) => r.er - r.sr + 1;
 
-// 주어진 좌표가 Rect 내부인지 확인
-const isInsideRect = (rect: Rect, r: number, c: number) =>
-  r >= rect.sr && r <= rect.er && c >= rect.sc && c <= rect.ec;
+/** selection 안에서
+ *  - 세로 방향 (col 고정, row만 변화) 값 배열 추출
+ */
+function collectColumnValues(
+  src: Rect,
+  col: number,
+  data: Record<string, string>
+): number[] | null {
+  const out: number[] = [];
+  for (let r = src.sr; r <= src.er; r++) {
+    const raw = data[keyOf(r, col)];
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    out.push(n);
+  }
+  return out;
+}
 
-// 숫자 시리즈 패턴 타입
-type NumberFillPattern = {
-  axis: "row" | "col"; // "row" = 세로 방향 (행 인덱스 기준), "col" = 가로 방향 (열 인덱스 기준)
-  base: number; // 기준값 (sr 또는 sc 위치의 값)
-  step: number; // 공차 (v[i+1] - v[i])
-  startIndex: number; // 기준 인덱스 (axis === "row" -> sr, axis === "col" -> sc)
-};
+/** selection 안에서
+ *  - 가로 방향 (row 고정, col만 변화) 값 배열 추출
+ */
+function collectRowValues(
+  src: Rect,
+  row: number,
+  data: Record<string, string>
+): number[] | null {
+  const out: number[] = [];
+  for (let c = src.sc; c <= src.ec; c++) {
+    const raw = data[keyOf(row, c)];
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    out.push(n);
+  }
+  return out;
+}
 
 /**
  * 선택 영역(src)과 타겟(tgt), 현재 데이터맵(prevData)를 기준으로
@@ -478,65 +513,28 @@ type NumberFillPattern = {
  *
  * 조건을 만족하지 못하면 null을 반환 → 기존 타일링 로직으로 처리
  */
+/** 1차원 숫자 배열에서 등차 시리즈 패턴 추론 */
 function inferNumberFillPattern(
-  src: Rect,
-  tgt: Rect,
-  data: Record<string, string>
+  values: number[],
+  axis: "row" | "col",
+  startIndex: number
 ): NumberFillPattern | null {
-  // 1) 같은 열에서만 세로로 확장하는지?
-  const sameCol = src.sc === src.ec && tgt.sc === tgt.ec;
-  // 2) 같은 행에서만 가로로 확장하는지?
-  const sameRow = src.sr === src.er && tgt.sr === tgt.er;
-
-  // "확장" 여부 (src 바깥으로 나갔는지)
-  const verticalExt = sameCol && (tgt.sr < src.sr || tgt.er > src.er); // 위/아래로 더 넓어졌는지
-  const horizontalExt = sameRow && (tgt.sc < src.sc || tgt.ec > src.ec); // 좌/우로 더 넓어졌는지
-
-  if (!verticalExt && !horizontalExt) return null;
-
-  const axis: "row" | "col" = verticalExt ? "row" : "col";
-  const values: number[] = [];
-
-  if (axis === "row") {
-    // 세로 패턴: 같은 열(sc)에 대해 sr..er 까지 값 수집
-    const col = src.sc;
-    for (let r = src.sr; r <= src.er; r++) {
-      const raw = data[keyOf(r, col)];
-      if (raw == null || raw === "") return null;
-      const n = Number(raw);
-      if (!Number.isFinite(n)) return null;
-      values.push(n);
-    }
-  } else {
-    // 가로 패턴: 같은 행(sr)에 대해 sc..ec 까지 값 수집
-    const row = src.sr;
-    for (let c = src.sc; c <= src.ec; c++) {
-      const raw = data[keyOf(row, c)];
-      if (raw == null || raw === "") return null;
-      const n = Number(raw);
-      if (!Number.isFinite(n)) return null;
-      values.push(n);
-    }
-  }
-
   if (values.length === 0) return null;
 
-  // 길이가 1인 경우: 한 개 숫자만 있으면 step = 0 (상수 시리즈)
+  // 한 개 → 상수 시리즈
   if (values.length === 1) {
     return {
       axis,
       base: values[0],
       step: 0,
-      startIndex: axis === "row" ? src.sr : src.sc,
+      startIndex,
     };
   }
 
-  // 길이 2 이상: 등차가 일정한지 체크
   const step = values[1] - values[0];
   for (let i = 1; i < values.length - 1; i++) {
     if (values[i + 1] - values[i] !== step) {
-      // 공차가 다르면 "숫자 시리즈"로 보지 않고 그냥 복사
-      return null;
+      return null; // 등차 아니면 패턴 포기
     }
   }
 
@@ -544,7 +542,7 @@ function inferNumberFillPattern(
     axis,
     base: values[0],
     step,
-    startIndex: axis === "row" ? src.sr : src.sc,
+    startIndex,
   };
 }
 
@@ -1279,7 +1277,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   fillSelectionTo: async (target) => {
     const { selection, data, stylesByCell, autoSaveEnabled, pushHistory } =
       get();
-
     if (!selection) return;
 
     const src = selection;
@@ -1287,7 +1284,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const srcW = rectW(src);
     if (srcH <= 0 || srcW <= 0) return;
 
-    // target도 시트 안으로 클램프
+    // target도 시트 범위 안으로 clamp
     const tgt: Rect = {
       sr: clampRow(target.sr),
       sc: clampCol(target.sc),
@@ -1295,62 +1292,132 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ec: clampCol(target.ec),
     };
 
-    // --- 여기서 "숫자 시리즈" 패턴 시도 ---
-    // 조건을 만족하면 NumberFillPattern, 아니면 null
-    const numberPattern = inferNumberFillPattern(src, tgt, data);
+    // selection 밖으로 안 나갔으면 의미 없음
+    if (
+      tgt.sr === src.sr &&
+      tgt.sc === src.sc &&
+      tgt.er === src.er &&
+      tgt.ec === src.ec
+    ) {
+      return;
+    }
 
-    // Undo 스냅샷
+    // --- 확장 방향 판별 ---
+    const verticalOnly =
+      tgt.sc === src.sc &&
+      tgt.ec === src.ec &&
+      (tgt.sr !== src.sr || tgt.er !== src.er);
+    const horizontalOnly =
+      tgt.sr === src.sr &&
+      tgt.er === src.er &&
+      (tgt.sc !== src.sc || tgt.ec !== src.ec);
+
+    let mode: "vertical" | "horizontal" | "tile" = "tile";
+    if (verticalOnly && !horizontalOnly) mode = "vertical";
+    else if (horizontalOnly && !verticalOnly) mode = "horizontal";
+    // 둘 다 변했거나(대각선) 판단 애매하면 그냥 타일링 모드
+
+    // --- 패턴 추론 (열/행별) ---
+    const colPatterns: Array<NumberFillPattern | null> = [];
+    const rowPatterns: Array<NumberFillPattern | null> = [];
+
+    if (mode === "vertical") {
+      // 각 열마다 [1,3,5] 같은 시리즈 따로 분석
+      for (let c = src.sc; c <= src.ec; c++) {
+        const arr = collectColumnValues(src, c, data);
+        const pat =
+          arr != null ? inferNumberFillPattern(arr, "row", src.sr) : null;
+        colPatterns.push(pat);
+      }
+    } else if (mode === "horizontal") {
+      // 각 행마다 [1,3,5] 시리즈 따로 분석
+      for (let r = src.sr; r <= src.er; r++) {
+        const arr = collectRowValues(src, r, data);
+        const pat =
+          arr != null ? inferNumberFillPattern(arr, "col", src.sc) : null;
+        rowPatterns.push(pat);
+      }
+    }
+
+    // --- Undo 스냅샷 + 다음 상태 준비 ---
     pushHistory();
     const prevData = data;
     const prevStyles = stylesByCell;
     const nextData: Record<string, string> = { ...prevData };
     const nextStyles: Record<string, CellStyle> = { ...prevStyles };
-    // source 패턴을 target 전체에 타일링
+
+    // --- 실제 채우기 루프 ---
     for (let r = tgt.sr; r <= tgt.er; r++) {
       for (let c = tgt.sc; c <= tgt.ec; c++) {
-        // source rect 안의 상대 위치 계산 (주기적으로 반복)
-        const relRow = (((r - src.sr) % srcH) + srcH) % srcH;
-        const relCol = (((c - src.sc) % srcW) + srcW) % srcW;
-        const srcR = src.sr + relRow;
-        const srcC = src.sc + relCol;
-
-        const srcKey = keyOf(srcR, srcC);
         const dstKey = keyOf(r, c);
 
-        // ==== 값 채우기 로직 분기 ====
-        let v: string;
+        const insideSrc =
+          r >= src.sr && r <= src.er && c >= src.sc && c <= src.ec;
 
-        if (numberPattern && !isInsideRect(src, r, c)) {
-          // 1) 숫자 시리즈 패턴이 있고, "원본 selection 바깥"인 셀
-          //    → 등차수열 기반으로 새 값을 계산
-
-          const index = numberPattern.axis === "row" ? r : c; // 세로면 row, 가로면 col 기준
-          const offset = index - numberPattern.startIndex;
-          const n = numberPattern.base + numberPattern.step * offset;
-          v = String(n);
+        // 스타일은 항상 "원본 패턴을 타일링" 방식으로 복사
+        const relRow = (((r - src.sr) % srcH) + srcH) % srcH;
+        const relCol = (((c - src.sc) % srcW) + srcW) % srcW;
+        const styleSrcR = src.sr + relRow;
+        const styleSrcC = src.sc + relCol;
+        const styleSrcKey = keyOf(styleSrcR, styleSrcC);
+        const styleSrc = prevStyles[styleSrcKey];
+        if (styleSrc) {
+          nextStyles[dstKey] = styleSrc;
         } else {
-          // 2) 패턴이 없거나, src 내부 셀은 기존 값 그대로
-          v = prevData[srcKey] ?? "";
+          delete nextStyles[dstKey];
         }
 
-        // 실제 데이터 반영
+        // 값 계산
+        let v: string | null = null;
+
+        if (insideSrc) {
+          // 원본 selection 안은 그대로 유지
+          v = prevData[dstKey] ?? "";
+        } else if (mode === "vertical") {
+          // 세로 방향 자동 채우기
+          const idx = c - src.sc; // 몇 번째 열인지
+          const pat = colPatterns[idx] ?? null;
+
+          if (pat) {
+            // 시리즈 패턴 있음 → 등차 수열 계산
+            const index = r; // axis=row → 인덱스는 row
+            const offset = index - pat.startIndex;
+            const num = pat.base + pat.step * offset;
+            v = String(num);
+          } else {
+            // 패턴 못 찾으면 기존 타일링
+            const dataSrcKey = keyOf(styleSrcR, c);
+            v = prevData[dataSrcKey] ?? "";
+          }
+        } else if (mode === "horizontal") {
+          // 가로 방향 자동 채우기
+          const idx = r - src.sr; // 몇 번째 행인지
+          const pat = rowPatterns[idx] ?? null;
+
+          if (pat) {
+            const index = c; // axis=col → 인덱스는 col
+            const offset = index - pat.startIndex;
+            const num = pat.base + pat.step * offset;
+            v = String(num);
+          } else {
+            const dataSrcKey = keyOf(r, styleSrcC);
+            v = prevData[dataSrcKey] ?? "";
+          }
+        } else {
+          // 타일링 모드 (기존 fillSelectionTo와 동일)
+          const dataSrcKey = keyOf(styleSrcR, styleSrcC);
+          v = prevData[dataSrcKey] ?? "";
+        }
+
         if (!v) {
           delete nextData[dstKey];
         } else {
           nextData[dstKey] = v;
         }
-
-        // 스타일은 기존 "타일링" 규칙 그대로 유지
-        const s = prevStyles[srcKey];
-        if (!s) {
-          delete nextStyles[dstKey];
-        } else {
-          nextStyles[dstKey] = s;
-        }
       }
     }
 
-    // 상태 반영 + selection을 채워진 target으로 갱신
+    // 상태 반영
     set({
       data: nextData,
       stylesByCell: nextStyles,
@@ -1360,6 +1427,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       head: null,
     });
 
+    // 저장
     if (autoSaveEnabled) {
       await persistDataDiff(prevData, nextData);
       await persistStyleDiff(prevStyles, nextStyles);
