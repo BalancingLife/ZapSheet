@@ -114,6 +114,8 @@ type SelectionSlice = {
   extendSelectionByArrow: (dir: Dir) => void; // ADD
   extendSelectionByCtrlEdge: (dir: Dir) => void; // ADD
 
+  fillPreview: Rect | null;
+  setFillPreview: (rect: Rect | null) => void;
   fillSelectionTo: (target: Rect) => Promise<void> | void;
 };
 
@@ -1172,6 +1174,12 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // Shift+Ctrl+방향키로 끝까지 확장
   extendSelectionByCtrlEdge: (dir) => {
     extendSelectionWith(get, set, dir, "edge");
+  },
+
+  fillPreview: null,
+
+  setFillPreview: (rect) => {
+    set({ fillPreview: rect });
   },
 
   // 자동 채우기 구조, 현재 selection을 target 영역에 반복 채우기. (패턴은 아직)

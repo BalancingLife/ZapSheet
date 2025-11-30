@@ -1,58 +1,56 @@
+// src/utils/clientPointToCell.ts
 export type ClientPointToCellArgs = {
   clientX: number;
   clientY: number;
-  gridRect: DOMRect; // gridRef.current.getBoundingClientRect()
+  gridEl: HTMLDivElement | null;
   columnWidths: number[];
   rowHeights: number[];
 };
 
-/**
- * 브라우저 client 좌표 → (row, col) 셀 인덱스로 변환
- * 그리드 영역 밖이면 null 반환
- */
+export type CellPos = { row: number; col: number };
 
+/**
+ * 화면 좌표(clientX/Y) + grid DOM + 열/행 폭 배열 -> 셀 좌표(row,col)
+ * 그리드 바깥이면 null
+ */
 export function clientPointToCell({
   clientX,
   clientY,
-  gridRect,
+  gridEl,
   columnWidths,
   rowHeights,
-}: ClientPointToCellArgs): { row: number; col: number } | null {
-  // 그리드 왼쪽 위를 (0,0) 로 맞추기
-  const x = clientX - gridRect.left;
-  const y = clientY - gridRect.top;
+}: ClientPointToCellArgs): CellPos | null {
+  if (!gridEl) return null;
 
-  // 위/왼쪽 바깥
+  const rect = gridEl.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+
+  // 그리드 좌상단 밖이면 무시
   if (x < 0 || y < 0) return null;
 
-  // 1) 열 찾기 (x 기준)
-  let col = -1;
+  // 열 찾기
   let accX = 0;
+  let col = -1;
   for (let c = 0; c < columnWidths.length; c++) {
-    const w = columnWidths[c];
-    if (x >= accX && x < accX + w) {
+    accX += columnWidths[c];
+    if (x < accX) {
       col = c;
       break;
     }
-    accX += w;
   }
 
-  // 2) 행 찾기 (y 기준)
-  let row = -1;
+  // 행 찾기
   let accY = 0;
+  let row = -1;
   for (let r = 0; r < rowHeights.length; r++) {
-    const h = rowHeights[r];
-    if (y >= accY && y < accY + h) {
+    accY += rowHeights[r];
+    if (y < accY) {
       row = r;
       break;
     }
-    accY += h;
   }
 
-  if (row === -1 || col === -1) {
-    // 오른쪽/아래 바깥
-    return null;
-  }
-
+  if (row < 0 || col < 0) return null;
   return { row, col };
 }
