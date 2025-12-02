@@ -31,6 +31,13 @@
   text-align: left;
 }
 
+/* 가운데 하단 정렬: 텍스트는 가운데 정렬 */
+.alignBottomCenter {
+  align-items: flex-end; /* 세로: 아래 */
+  justify-content: center; /* 가로: 가운데 */
+  text-align: center;
+}
+
 /* 우하단 정렬: 텍스트는 우측 정렬 */
 .alignBottomRight {
   align-items: flex-end; /* 세로: 아래 */

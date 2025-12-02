@@ -44,10 +44,21 @@ function Cell({ row, col }: CellProps) {
   });
   const displayVal = toDisplayString(val, { resolveCell });
   const isErr = displayVal === DISPLAY_ERROR;
+  const style = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
+
   const isDisplayNumeric = isNumericValue(displayVal);
-  const alignClass = isDisplayNumeric
-    ? styles.alignBottomRight
-    : styles.alignBottomLeft;
+
+  //  최종 정렬 결정: 스타일에 textAlign 있으면 우선, 없으면 숫자는 right / 나머지는 left
+  const computedAlign: "left" | "center" | "right" =
+    style?.textAlign ?? (isDisplayNumeric ? "right" : "left");
+
+  //  정렬에 따라 CSS 클래스 매핑
+  const alignClass =
+    computedAlign === "right"
+      ? styles.alignBottomRight
+      : computedAlign === "center"
+      ? styles.alignBottomCenter
+      : styles.alignBottomLeft;
 
   const fontSize = useSheetStore(
     (s) => s.stylesByCell[`${row}:${col}`]?.fontSize ?? DEFAULT_FONT_SIZE
@@ -56,7 +67,6 @@ function Cell({ row, col }: CellProps) {
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const style = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
   const borderCss = useBorderCss(row, col);
 
   useEffect(() => {

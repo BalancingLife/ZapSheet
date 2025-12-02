@@ -157,6 +157,26 @@
   text-decoration: underline;
 }
 
+/* 정렬 버튼 그룹 */
+.alignGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: #fff;
+  border: 1px solid #d9dde3;
+  border-radius: 8px;
+  margin-left: 6px;
+}
+
+/* 정렬 버튼은 살짝 더 좁게 */
+.alignBtn {
+  width: 24px;
+  height: 26px;
+  font-size: 12px;
+  padding: 0;
+}
+
 /* 기존 것들과 톤을 맞추기 위한 사소한 보정 */
 .trailing {
   margin-left: auto;

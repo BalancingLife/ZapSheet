@@ -36,6 +36,12 @@ export default function ToolBar() {
   const isItalic = !!currentStyle?.italic;
   const isUnderline = !!currentStyle?.underline;
 
+  //  현재 정렬 상태 (없으면 left)
+  const currentAlign = (currentStyle?.textAlign ?? "left") as
+    | "left"
+    | "center"
+    | "right";
+
   const handleTextColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const color = e.target.value;
     applyStyleToSelection({ textColor: color });
@@ -84,6 +90,14 @@ export default function ToolBar() {
   const toggleUnderline = useCallback(() => {
     applyStyleToSelection({ underline: !isUnderline });
   }, [applyStyleToSelection, isUnderline]);
+
+  // 글자 정렬 핸들러
+  const setTextAlign = useCallback(
+    (align: "left" | "center" | "right") => {
+      applyStyleToSelection({ textAlign: align });
+    },
+    [applyStyleToSelection]
+  );
 
   useEffect(() => {
     const onHotkey = (e: KeyboardEvent) => {
@@ -198,6 +212,45 @@ export default function ToolBar() {
           aria-pressed={isUnderline}
         >
           U
+        </button>
+      </div>
+
+      <div className={styles.vDivider} />
+
+      {/*  정렬 버튼 그룹 */}
+      <div className={styles.alignGroup}>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${styles.alignBtn} ${
+            currentAlign === "left" ? styles.active : ""
+          }`}
+          onClick={() => setTextAlign("left")}
+          title="왼쪽 정렬"
+          aria-pressed={currentAlign === "left"}
+        >
+          <img src="/images/align-left.png" width={15} height={15} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${styles.alignBtn} ${
+            currentAlign === "center" ? styles.active : ""
+          }`}
+          onClick={() => setTextAlign("center")}
+          title="가운데 정렬"
+          aria-pressed={currentAlign === "center"}
+        >
+          <img src="/images/align-center.png" width={16} height={16} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${styles.alignBtn} ${
+            currentAlign === "right" ? styles.active : ""
+          }`}
+          onClick={() => setTextAlign("right")}
+          title="오른쪽 정렬"
+          aria-pressed={currentAlign === "right"}
+        >
+          <img src="/images/align-right.png" width={15} height={15} />
         </button>
       </div>
 

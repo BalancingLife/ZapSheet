@@ -41,6 +41,8 @@ export type CellStyle = {
   italic?: boolean;
   underline?: boolean;
   border?: CellBorder;
+
+  textAlign?: "left" | "center" | "right";
 };
 
 export type BorderLineStyle = "solid" | "dashed" | "dotted";
@@ -214,6 +216,12 @@ type StyleSlice = {
   // 선택영역 폰트사이즈 변경
   setFontSize: (next: number) => Promise<void> | void;
   /** Supabase로부터 스타일 로드 */
+
+  // ✅ 정렬 조회/설정
+  getTextAlign: (row: number, col: number) => "left" | "center" | "right";
+  getTextAlignForFocus: () => "left" | "center" | "right";
+  setTextAlign: (align: "left" | "center" | "right") => Promise<void> | void;
+
   loadCellStyles: () => Promise<void>;
   upsertCellStyles?: (
     payload: Array<{ row: number; col: number; style_json: CellStyle }>
@@ -2065,6 +2073,26 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     } else {
       set({ hasUnsavedChanges: true });
     }
+  },
+
+  // 개별 셀 정렬 조회 (없으면 "left")
+  getTextAlign: (row, col) => {
+    const key = keyOf(row, col);
+    const style = get().stylesByCell[key];
+    return style?.textAlign ?? "left";
+  },
+
+  //  포커스 셀 기준 정렬 조회
+  getTextAlignForFocus: () => {
+    const { focus, getTextAlign } = get();
+    if (!focus) return "left";
+    return getTextAlign(focus.row, focus.col);
+  },
+
+  //  선택 영역에 정렬 적용 (왼쪽/가운데/오른쪽 공용)
+  setTextAlign: (align) => {
+    const { applyStyleToSelection } = get();
+    return applyStyleToSelection({ textAlign: align });
   },
 
   loadCellStyles: async () => {
