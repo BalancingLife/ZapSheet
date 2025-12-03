@@ -184,11 +184,8 @@ function evalRPN(
 }
 
 function roundSmart(v: number): number {
-  // 12자리 정도까지 반올림 (표시용 안정화)
-  const s = v.toString();
-  if (s.includes("e") || s.length > 15) {
-    return parseFloat(v.toFixed(10));
-  }
+  if (Number.isInteger(v)) return v;
+  return Math.round(v);
   return v;
 }
 

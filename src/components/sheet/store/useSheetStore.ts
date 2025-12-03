@@ -900,7 +900,7 @@ function evalCellByKey(
         return null; // 숫자로 해석 불가 → formula 쪽에서 에러 처리
       },
     });
-  } catch (e) {
+  } catch {
     result = null;
   }
 
