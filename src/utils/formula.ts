@@ -230,7 +230,6 @@ function collectNumericArgs(
 ): number[] | null {
   if (!resolveCell) return null;
 
-  // 아주 단순 콤마 split (이번 라운드: 중첩/문자열 미지원)
   const args = argsStr
     .split(",")
     .map((s) => s.trim())
@@ -239,7 +238,7 @@ function collectNumericArgs(
   const out: number[] = [];
 
   for (const arg of args) {
-    // 1) 범위?
+    // 1) 범위?  (A1:B5)
     const rect = a1ToRect(arg);
     if (rect) {
       for (let r = rect.sr; r <= rect.er; r++) {
@@ -252,7 +251,7 @@ function collectNumericArgs(
       continue;
     }
 
-    // 2) 단일 셀?
+    // 2) 단일 셀? (A1)
     const pos = a1ToPos(arg);
     if (pos) {
       const a1 = `${colToLabel(pos.col)}${pos.row + 1}`;
@@ -261,14 +260,22 @@ function collectNumericArgs(
       continue;
     }
 
-    // 3) 숫자 리터럴?
-    const n = Number(arg);
-    if (isFinite(n)) {
-      out.push(n);
+    // 3) 또 다른 함수 호출? (SUM(...), AVERAGE(...), ...)
+    const fc = parseFuncCall("=" + arg);
+    if (fc && isSupportedFunc(fc.name)) {
+      const v = evalAggregate(fc.name, fc.args, resolveCell);
+      if (v != null && isFinite(v)) out.push(v);
       continue;
     }
 
-    // 4) 그 외는 무시
+    // 4) 나머지는 "표현식"으로 보고 사칙연산 평가 (1+2, A1+B1 등)
+    const exprVal = evaluateFormulaStrict("=" + arg, { resolveCell });
+    if (exprVal != null && isFinite(exprVal)) {
+      out.push(exprVal);
+      continue;
+    }
+
+    // 5) 그 외는 무시
   }
 
   return out;
@@ -354,4 +361,28 @@ export function toDisplayString(
 
   const str = String(v);
   return str.endsWith(".0") ? String(Math.round(v)) : str;
+}
+
+export function evaluateFormulaToNumber(
+  raw: string,
+  opts?: { resolveCell?: (a1: string) => number | null }
+): number | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  // 1) 함수 수식? (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT)
+  const fc = parseFuncCall(s);
+  if (fc && isSupportedFunc(fc.name)) {
+    return evalAggregate(fc.name, fc.args, opts?.resolveCell);
+  }
+
+  // 2) = 로 시작하는 일반 수식? (=1+2, =A1+B2*3 ...)
+  if (s.startsWith("=")) {
+    return evaluateFormulaStrict(s, opts);
+  }
+
+  // 3) 그냥 숫자 리터럴? ("10", "3.14")
+  const n = Number(s);
+  return isFinite(n) ? n : null;
 }

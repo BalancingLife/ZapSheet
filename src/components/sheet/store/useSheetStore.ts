@@ -2,7 +2,7 @@ import React from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabaseClient";
 import { a1ToPos } from "@/utils/a1Utils";
-import { evaluateFormulaStrict } from "@/utils/formula";
+import { evaluateFormulaToNumber } from "@/utils/formula";
 import { shiftFormulaByOffset } from "@/utils/shiftFormula";
 import { isNumericValue } from "@/utils/numberFormat";
 
@@ -190,6 +190,8 @@ type HistorySlice = {
   redo: () => void | Promise<void>;
 };
 
+type CalcValue = number | string | null;
+
 type FormulaSlice = {
   formulaMirror: string;
   setFormulaInput: (v: string) => void;
@@ -204,6 +206,9 @@ type FormulaSlice = {
    * commaSmart: 괄호 안 인자 사이에 있을 때 자동으로 콤마를 적절히 보정
    */
   insertRefAtCaret: (ref: string, opts?: { commaSmart?: boolean }) => void;
+
+  getComputedValue: (row: number, col: number) => CalcValue;
+  evaluateCellByA1: (a1: string) => CalcValue;
 };
 
 type StyleSlice = {
@@ -279,7 +284,7 @@ type SheetState = LayoutSlice &
 // Helpers (공통 유틸)
 // =====================
 
-// 현재 로그인 유저 id 추출
+// 현재 로그인 유저 id 추출f
 // 모든 DB I/O는 user_id가 필요하다. 매번 인증 객체에서 uid를 꺼내는 중복을 없애고, “인증 안 됨” 케이스를 한 곳에서 표준화하기 위함.
 async function getCurrentUserId(): Promise<string | null> {
   // Prmoise<string |null> : “비동기로 동작하고, 끝나면 유저 id(문자열) 또는 null을 돌려줄 거야” 라는 선언.
@@ -844,6 +849,72 @@ export function useBorderCss(row: number, col: number): React.CSSProperties {
     } as React.CSSProperties;
   }, [row, col, selfStyle, topStyle, leftStyle, isLastCol, isLastRow]);
 }
+
+function evalCellByKey(
+  key: string,
+  state: SheetState,
+  visiting: Set<string>
+): CalcValue {
+  // 순환 참조 방지
+  if (visiting.has(key)) {
+    return "#CYCLE!"; // 순환이면 그냥 에러 텍스트
+  }
+
+  visiting.add(key);
+
+  const raw = state.data[key] ?? "";
+  const trimmed = raw.trim();
+
+  // 비어 있는 셀
+  if (trimmed === "") {
+    visiting.delete(key);
+    return "";
+  }
+
+  // 수식이 아닌 리터럴
+  if (!trimmed.startsWith("=")) {
+    if (isNumericValue(trimmed)) {
+      visiting.delete(key);
+      return Number(trimmed);
+    }
+    visiting.delete(key);
+    return raw;
+  }
+
+  // ===== 수식 처리 =====
+  let result: number | null = null;
+  try {
+    result = evaluateFormulaToNumber(raw, {
+      // A1, A1:B3 같은 참조를 만났을 때 호출되는 콜백
+      resolveCell: (a1: string): number | null => {
+        const pos = a1ToPos(a1);
+        if (!pos) return null;
+
+        const depKey = keyOf(pos.row, pos.col);
+        const v = evalCellByKey(depKey, state, visiting);
+
+        if (typeof v === "number") return v;
+        if (typeof v === "string" && isNumericValue(v)) {
+          return Number(v);
+        }
+        return null; // 숫자로 해석 불가 → formula 쪽에서 에러 처리
+      },
+    });
+  } catch (e) {
+    result = null;
+  }
+
+  visiting.delete(key);
+
+  if (result == null || !Number.isFinite(result)) {
+    return "#VALUE!"; // 평가 실패
+  }
+  return result;
+}
+
+// =====================
+// Helpers 끝 (공통 유틸)
+// =====================
 
 // sheetSlice
 const genId = () =>
@@ -1791,26 +1862,20 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   //셀 찾아가서 → 그 셀 값이 수식이면 재귀로 평가 → 결과가 숫자면 number, 아니면 null을 돌려주는 함수
   resolveCellNumeric: (a1: string, depth: number = 0): number | null => {
     const { getValue, resolveCellNumeric } = get();
-    if (depth > 50) return null; // 순환 가드
+    if (depth > 50) return null; // 순환 참조 가드
 
-    const pos = a1ToPos(a1); // A1 -> (0,0)
+    const pos = a1ToPos(a1);
     if (!pos) return null;
 
     const rawStr = getValue(pos.row, pos.col) ?? "";
     if (!rawStr) return null;
 
-    // =으로 시작하면 수식으로 판단
-    if (rawStr.trim().startsWith("=")) {
-      // ealuateFormulaStrict : "= 1 + 2" 형태에서 앞의 "="를 떼고 사칙연산만 평가. 실패 시 null 반환
-      const v = evaluateFormulaStrict(rawStr, {
-        resolveCell: (innerA1: string): number | null =>
-          resolveCellNumeric(innerA1, depth + 1),
-      });
-      return v == null || !isFinite(v) ? null : v;
-    }
+    const v = evaluateFormulaToNumber(rawStr, {
+      resolveCell: (innerA1: string): number | null =>
+        resolveCellNumeric(innerA1, depth + 1),
+    });
 
-    const n = Number(rawStr);
-    return isFinite(n) ? n : null;
+    return v == null || !isFinite(v) ? null : v;
   },
 
   // 포뮬라 입력창(FormulaInput)의 커서 위치를 저장하는 숫자.
@@ -1854,6 +1919,22 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         ? {}
         : { formulaMirror: next, formulaCaret: nextCaret }
     );
+  },
+
+  getComputedValue: (row, col) => {
+    const key = keyOf(row, col);
+    const state = get();
+    const visiting = new Set<string>();
+    return evalCellByKey(key, state, visiting);
+  },
+
+  evaluateCellByA1: (a1) => {
+    const pos = a1ToPos(a1);
+    if (!pos) return null;
+    const key = keyOf(pos.row, pos.col);
+    const state = get();
+    const visiting = new Set<string>();
+    return evalCellByKey(key, state, visiting);
   },
 
   // ----StyleSlice----
