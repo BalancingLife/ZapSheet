@@ -1,8 +1,9 @@
+// ColHeader.tsx
 import { useEffect } from "react";
 import { COLUMN_COUNT } from "./SheetConstants";
 import styles from "./ColHeader.module.css";
-import { colToLabel } from "@/utils/a1Utils";
 import { useSheetStore } from "./store/useSheetStore";
+import { colToLabel } from "@/utils/a1Utils";
 
 interface ColHeaderProps {
   colHeaderHeight: number;
@@ -18,7 +19,6 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
   const endResize = useSheetStore((s) => s.endResize);
   const resizing = useSheetStore((s) => s.resizing);
 
-  // 열 헤더 메뉴 오픈 액션
   const openColHeaderMenu = useSheetStore((s) => s.openColHeaderMenu);
 
   useEffect(() => {
@@ -41,8 +41,6 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
     };
   }, [resizing, updateResize, endResize]);
 
-  const colTemplate = columnWidths.map((w) => `${w}px`).join(" ");
-
   const cols = Array.from({ length: COLUMN_COUNT }).map((_, i) => {
     const selected = !!selection && i >= selection.sc && i <= selection.ec;
 
@@ -50,25 +48,34 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
       <div
         key={i}
         className={selected ? `${styles.colHeader} selected` : styles.colHeader}
-        style={{ width: columnWidths[i] - 1 }} // 기존 -1px 조정 유지
+        style={{ width: columnWidths[i] - 1, height: colHeaderHeight - 1 }}
         role="button"
         tabIndex={0}
         onMouseDown={(e) => {
+          if (e.button !== 0) return;
           e.preventDefault();
-          selectCol(i, e.shiftKey); // Shift로 확장
+          selectCol(i, e.shiftKey);
         }}
         onContextMenu={(e) => {
-          // onContexstMenu <= 우클릭 이벤트
           e.preventDefault();
-          e.stopPropagation();
+
+          const hasSelection = !!selection;
+          const isMulti = hasSelection && selection!.sc !== selection!.ec;
+          const insideMulti =
+            hasSelection && i >= selection!.sc && i <= selection!.ec;
+
+          // 다중 선택 영역 안 우클릭이면 selection 유지
+          // 그 외는 단일 선택으로 변경
+          if (!isMulti || !insideMulti) {
+            selectCol(i, false);
+          }
+
+          // 메뉴 열기
           openColHeaderMenu(i, e.clientX, e.clientY);
         }}
         title={colToLabel(i)}
       >
         {colToLabel(i)}
-
-        {/* 크기 변경 div */}
-
         <div
           data-resize="col"
           className={styles.colResizeHandle}
@@ -84,10 +91,7 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
   });
 
   return (
-    <div
-      className={styles.container}
-      style={{ height: colHeaderHeight, gridTemplateColumns: colTemplate }}
-    >
+    <div className={styles.container} style={{ height: colHeaderHeight }}>
       {cols}
     </div>
   );

@@ -1,3 +1,4 @@
+// RowHeader.tsx
 import { useEffect } from "react";
 import { ROW_COUNT } from "./SheetConstants";
 import styles from "./RowHeader.module.css";
@@ -12,17 +13,16 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
   const selection = useSheetStore((s) => s.selection);
   const rowHeights = useSheetStore((s) => s.rowHeights);
 
-  const openRowHeaderMenu = useSheetStore((s) => s.openRowHeaderMenu);
-
-  // 리사이즈 제어
   const startResizeRow = useSheetStore((s) => s.startResizeRow);
   const updateResize = useSheetStore((s) => s.updateResize);
   const endResize = useSheetStore((s) => s.endResize);
   const resizing = useSheetStore((s) => s.resizing);
 
-  // 전역 mousemove / mouseup 바인딩
+  const openRowHeaderMenu = useSheetStore((s) => s.openRowHeaderMenu);
+
+  // 리사이즈 전역 바인딩
   useEffect(() => {
-    if (!resizing || resizing.type !== "row") return; // 행 리사이즈 중일 때만 이 효과 실행.
+    if (!resizing || resizing.type !== "row") return;
     const onMove = (e: MouseEvent) => {
       e.preventDefault();
       updateResize(e.clientY);
@@ -30,9 +30,6 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
     const onUp = () => {
       endResize();
       document.body.style.cursor = "";
-
-      // 전역(window)에 이벤트를 걸어두면
-      // 마우스가 헤더 밖으로 나가도 드래그가 계속 인식
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -55,19 +52,30 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
         role="button"
         tabIndex={0}
         onMouseDown={(e) => {
-          e.preventDefault(); // 드래그 충돌 방지
-          selectRow(i, e.shiftKey); // Shift 누르면 기존 selection에 합집합
+          // 왼쪽 버튼일 때만 selection 변경
+          if (e.button !== 0) return;
+          e.preventDefault();
+          selectRow(i, e.shiftKey);
         }}
         onContextMenu={(e) => {
-          // onContexstMenu <= 우클릭 이벤트
           e.preventDefault();
-          e.stopPropagation();
+
+          const hasSelection = !!selection;
+          const isMulti = hasSelection && selection!.sr !== selection!.er;
+          const insideMulti =
+            hasSelection && i >= selection!.sr && i <= selection!.er;
+
+          // 다중 선택 + 영역 안 우클릭이면 selection 유지
+          // 그 외에는 이 행만 단일 선택으로 교체
+          if (!isMulti || !insideMulti) {
+            selectRow(i, false);
+          }
+
           openRowHeaderMenu(i, e.clientX, e.clientY);
         }}
         title={`${i + 1}`}
       >
         {i + 1}
-        {/* 하단 리사이즈 핸들 */}
         <div
           data-resize="row"
           className={styles.rowResizeHandle}

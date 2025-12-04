@@ -1,6 +1,7 @@
 // HeaderMenu.tsx
 import { useEffect } from "react";
 import { useSheetStore } from "./store/useSheetStore";
+import { ROW_COUNT, COLUMN_COUNT } from "./SheetConstants";
 import styles from "./HeaderMenu.module.css";
 
 export default function HeaderMenu() {
@@ -12,19 +13,40 @@ export default function HeaderMenu() {
   const insertColAt = useSheetStore((s) => s.insertColAt);
   const deleteColAt = useSheetStore((s) => s.deleteColAt);
 
-  // 메뉴 외부 클릭 시 닫기
+  const deleteSelectedRows = useSheetStore((s) => s.deleteSelectedRows);
+  const deleteSelectedCols = useSheetStore((s) => s.deleteSelectedCols);
+  const selection = useSheetStore((s) => s.selection);
+
   useEffect(() => {
     if (!headerMenu) return;
 
-    const onClickOutside = () => closeHeaderMenu();
+    const onClickOutside = () => {
+      closeHeaderMenu();
+    };
 
     window.addEventListener("click", onClickOutside);
-    return () => window.removeEventListener("click", onClickOutside);
+    return () => {
+      window.removeEventListener("click", onClickOutside);
+    };
   }, [headerMenu, closeHeaderMenu]);
 
   if (!headerMenu) return null;
 
   const { type, index, x, y } = headerMenu;
+
+  const isRowMultiSelection =
+    type === "row" &&
+    selection &&
+    selection.sc === 0 &&
+    selection.ec === COLUMN_COUNT - 1 &&
+    Math.abs(selection.er - selection.sr) >= 1;
+
+  const isColMultiSelection =
+    type === "col" &&
+    selection &&
+    selection.sr === 0 &&
+    selection.er === ROW_COUNT - 1 &&
+    Math.abs(selection.ec - selection.sc) >= 1;
 
   return (
     <div
@@ -33,9 +55,6 @@ export default function HeaderMenu() {
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* ------------------------------ */}
-      {/* 행 메뉴: 위/아래 삽입 + 삭제 */}
-      {/* ------------------------------ */}
       {type === "row" && (
         <>
           <button
@@ -47,7 +66,6 @@ export default function HeaderMenu() {
           >
             위에 행 삽입
           </button>
-
           <button
             className={styles.item}
             onClick={() => {
@@ -63,34 +81,42 @@ export default function HeaderMenu() {
           <button
             className={styles.itemDanger}
             onClick={() => {
-              deleteRowAt(index);
+              deleteRowAt(index); // 단일 행 삭제
               closeHeaderMenu();
             }}
           >
             행 삭제
           </button>
+
+          {isRowMultiSelection && (
+            <button
+              className={styles.itemDanger}
+              onClick={async () => {
+                await deleteSelectedRows();
+                closeHeaderMenu();
+              }}
+            >
+              선택된 행 모두 삭제
+            </button>
+          )}
         </>
       )}
 
-      {/* ------------------------------ */}
-      {/* 열 메뉴: 왼/오 삽입 + 삭제 */}
-      {/* ------------------------------ */}
       {type === "col" && (
         <>
           <button
             className={styles.item}
             onClick={() => {
-              insertColAt(index); // 왼쪽 삽입
+              insertColAt(index); // 왼쪽에 삽입
               closeHeaderMenu();
             }}
           >
             왼쪽에 열 삽입
           </button>
-
           <button
             className={styles.item}
             onClick={() => {
-              insertColAt(index + 1); // 오른쪽 삽입
+              insertColAt(index + 1); // 오른쪽에 삽입
               closeHeaderMenu();
             }}
           >
@@ -102,12 +128,24 @@ export default function HeaderMenu() {
           <button
             className={styles.itemDanger}
             onClick={() => {
-              deleteColAt(index);
+              deleteColAt(index); // 단일 열 삭제
               closeHeaderMenu();
             }}
           >
             열 삭제
           </button>
+
+          {isColMultiSelection && (
+            <button
+              className={styles.itemDanger}
+              onClick={async () => {
+                await deleteSelectedCols();
+                closeHeaderMenu();
+              }}
+            >
+              선택된 열 모두 삭제
+            </button>
+          )}
         </>
       )}
     </div>

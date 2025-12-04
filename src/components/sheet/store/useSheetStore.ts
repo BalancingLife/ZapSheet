@@ -282,11 +282,17 @@ type HeaderMenuSlice = {
   openColHeaderMenu: (index: number, x: number, y: number) => void;
   closeHeaderMenu: () => void;
 
-  // 행/열 삽입·삭제 액션
+  // 행/열 삽입
   insertRowAt: (index: number) => Promise<void>;
-  deleteRowAt: (index: number) => Promise<void>;
   insertColAt: (index: number) => Promise<void>;
+
+  // 단일 행/열 삭제
+  deleteRowAt: (index: number) => Promise<void>;
   deleteColAt: (index: number) => Promise<void>;
+
+  // 다중선택 행/열 삭제
+  deleteSelectedRows: () => Promise<void>;
+  deleteSelectedCols: () => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -2989,6 +2995,216 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     // 3) selection/focus: 삭제된 열 기준 클램프
     const newCol = Math.min(index, COLUMN_COUNT - 1);
+
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      columnWidths: nextWidths,
+      selection: {
+        sr: 0,
+        sc: newCol,
+        er: ROW_COUNT - 1,
+        ec: newCol,
+      },
+      focus: { row: 0, col: newCol },
+      isSelecting: false,
+      anchor: { row: 0, col: newCol },
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+      debounceLayoutSave(() => {
+        get().saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
+  },
+
+  // 다중선택 행 삭제
+  deleteSelectedRows: async () => {
+    const {
+      selection,
+      data,
+      stylesByCell,
+      rowHeights,
+      manualRowFlags,
+      autoSaveEnabled,
+      pushHistory,
+    } = get();
+
+    if (!selection) return;
+
+    // 선택된 구간 정규화
+    const rawStart = Math.min(selection.sr, selection.er);
+    const rawEnd = Math.max(selection.sr, selection.er);
+
+    // 범위 클램프
+    const start = Math.max(0, rawStart);
+    const end = Math.min(ROW_COUNT - 1, rawEnd);
+
+    const deleteCount = end - start + 1;
+    if (deleteCount <= 0) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = {};
+    const nextStyles: Record<string, CellStyle> = {};
+
+    // 1) data/스타일: [start..end] 행은 날리고, 그 아래는 deleteCount만큼 위로 당김
+    for (const [k, v] of Object.entries(prevData)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (r < start) {
+        // 위쪽은 그대로
+        nextData[k] = v;
+      } else if (r > end) {
+        // 아래쪽은 deleteCount 만큼 위로 당김
+        const nr = r - deleteCount;
+        if (nr < 0) continue;
+        nextData[keyOf(nr, c)] = v;
+      }
+      // r ∈ [start, end] 는 삭제
+    }
+
+    for (const [k, style] of Object.entries(prevStyles)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (r < start) {
+        nextStyles[k] = style;
+      } else if (r > end) {
+        const nr = r - deleteCount;
+        if (nr < 0) continue;
+        nextStyles[keyOf(nr, c)] = style;
+      }
+      // r ∈ [start, end] 는 삭제
+    }
+
+    // 2) rowHeights / manualRowFlags 도 한 번에 위로 당기기
+    const nextHeights = [...rowHeights];
+    const nextFlags = [...manualRowFlags];
+
+    // start 지점부터 뒤쪽을 deleteCount만큼 땡김
+    for (let r = start; r < ROW_COUNT - deleteCount; r++) {
+      nextHeights[r] = nextHeights[r + deleteCount];
+      nextFlags[r] = nextFlags[r + deleteCount];
+    }
+    // 맨 뒤 deleteCount개는 초기값으로 리셋
+    for (let r = ROW_COUNT - deleteCount; r < ROW_COUNT; r++) {
+      nextHeights[r] = DEFAULT_ROW_HEIGHT;
+      nextFlags[r] = false;
+    }
+
+    const newRow = Math.min(start, ROW_COUNT - 1);
+
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      rowHeights: nextHeights,
+      manualRowFlags: nextFlags,
+      selection: {
+        sr: newRow,
+        sc: 0,
+        er: newRow,
+        ec: COLUMN_COUNT - 1,
+      },
+      focus: { row: newRow, col: 0 },
+      isSelecting: false,
+      anchor: { row: newRow, col: 0 },
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+      debounceLayoutSave(() => {
+        get().saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
+  },
+
+  deleteSelectedCols: async () => {
+    const {
+      selection,
+      data,
+      stylesByCell,
+      columnWidths,
+      autoSaveEnabled,
+      pushHistory,
+    } = get();
+
+    if (!selection) return;
+
+    const rawStart = Math.min(selection.sc, selection.ec);
+    const rawEnd = Math.max(selection.sc, selection.ec);
+
+    const start = Math.max(0, rawStart);
+    const end = Math.min(COLUMN_COUNT - 1, rawEnd);
+
+    const deleteCount = end - start + 1;
+    if (deleteCount <= 0) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = {};
+    const nextStyles: Record<string, CellStyle> = {};
+
+    // 1) data/스타일: [start..end] 열은 삭제, 오른쪽은 deleteCount만큼 왼쪽으로 당김
+    for (const [k, v] of Object.entries(prevData)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (c < start) {
+        nextData[k] = v;
+      } else if (c > end) {
+        const nc = c - deleteCount;
+        if (nc < 0) continue;
+        nextData[keyOf(r, nc)] = v;
+      }
+      // c ∈ [start, end] 는 삭제
+    }
+
+    for (const [k, style] of Object.entries(prevStyles)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (c < start) {
+        nextStyles[k] = style;
+      } else if (c > end) {
+        const nc = c - deleteCount;
+        if (nc < 0) continue;
+        nextStyles[keyOf(r, nc)] = style;
+      }
+      // c ∈ [start, end] 는 삭제
+    }
+
+    // 2) columnWidths 한 번에 왼쪽으로 당기기
+    const nextWidths = [...columnWidths];
+
+    for (let c = start; c < COLUMN_COUNT - deleteCount; c++) {
+      nextWidths[c] = nextWidths[c + deleteCount];
+    }
+    for (let c = COLUMN_COUNT - deleteCount; c < COLUMN_COUNT; c++) {
+      nextWidths[c] = DEFAULT_COL_WIDTH;
+    }
+
+    const newCol = Math.min(start, COLUMN_COUNT - 1);
 
     set({
       data: nextData,
