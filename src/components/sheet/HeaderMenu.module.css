@@ -1,27 +1,55 @@
-/* HeaderMenu.module.css */
-
 .menu {
   position: fixed;
-  z-index: 9999;
+  z-index: 1500;
+  background: #fff;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  padding: 6px 0;
   min-width: 160px;
-  background: #ffffff;
-  border: 1px solid #d0d4dd;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  padding: 4px 0;
-  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  color: #333;
 }
 
-.item {
+/* 메뉴 아이템 */
+.item,
+.itemDanger {
   width: 100%;
-  padding: 6px 12px;
+  padding: 8px 12px;
+  text-align: left;
   background: transparent;
   border: none;
-  text-align: left;
   cursor: pointer;
-  font: inherit;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.3;
+  user-select: none;
 }
 
+/* 일반 아이템 hover */
 .item:hover {
-  background: #f3f4f6;
+  background: #f3f6fa; /* Footer ctxItem hover */
+}
+
+/* 구분선 */
+.divider {
+  margin: 4px 0;
+  height: 1px;
+  background: #eef1f5;
+  border: none;
+}
+
+/* 위험한 아이템 (삭제) */
+.itemDanger {
+  color: #d64545;
+}
+
+.itemDanger:hover {
+  background: #fdeaea;
+}
+
+/* 위에서 떨어지는 느낌 필요할 때 (Footer의 dropAbove 패턴 유지) */
+.dropAbove {
+  transform: translateY(calc(-100% - 6px));
+  transform-origin: bottom left;
 }

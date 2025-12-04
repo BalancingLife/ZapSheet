@@ -7,9 +7,10 @@ export default function HeaderMenu() {
   const headerMenu = useSheetStore((s) => s.headerMenu);
   const closeHeaderMenu = useSheetStore((s) => s.closeHeaderMenu);
 
-  const selectRow = useSheetStore((s) => s.selectRow);
-  const selectColumn = useSheetStore((s) => s.selectColumn);
-  const clearSelectionCells = useSheetStore((s) => s.clearSelectionCells);
+  const insertRowAt = useSheetStore((s) => s.insertRowAt);
+  const deleteRowAt = useSheetStore((s) => s.deleteRowAt);
+  const insertColAt = useSheetStore((s) => s.insertColAt);
+  const deleteColAt = useSheetStore((s) => s.deleteColAt);
 
   // 메뉴 열렸을 때 바깥 클릭하면 닫기
   useEffect(() => {
@@ -27,26 +28,7 @@ export default function HeaderMenu() {
 
   if (!headerMenu) return null;
 
-  const { type, index, x, y } = headerMenu;
-
-  const handleSelectAll = () => {
-    if (type === "row") {
-      selectRow(index, false);
-    } else {
-      selectColumn(index, false);
-    }
-    closeHeaderMenu();
-  };
-
-  const handleClearContents = () => {
-    if (type === "row") {
-      selectRow(index, false);
-    } else {
-      selectColumn(index, false);
-    }
-    clearSelectionCells();
-    closeHeaderMenu();
-  };
+  const { x, y } = headerMenu;
 
   return (
     <div
@@ -54,12 +36,51 @@ export default function HeaderMenu() {
       style={{ left: x, top: y }}
       onClick={(e) => e.stopPropagation()} // 자기 자신 클릭은 바깥으로 안 나가게
     >
-      <button className={styles.item} onClick={handleSelectAll}>
-        {type === "row" ? "이 행 전체 선택" : "이 열 전체 선택"}
-      </button>
-      <button className={styles.item} onClick={handleClearContents}>
-        {type === "row" ? "이 행 내용 지우기" : "이 열 내용 지우기"}
-      </button>
+      {headerMenu.type === "row" && (
+        <>
+          <button
+            className={styles.item}
+            onClick={() => {
+              insertRowAt(headerMenu.index);
+              closeHeaderMenu();
+            }}
+          >
+            행 삽입
+          </button>
+          <button
+            className={styles.itemDanger}
+            onClick={() => {
+              deleteRowAt(headerMenu.index);
+              closeHeaderMenu();
+            }}
+          >
+            행 삭제
+          </button>
+        </>
+      )}
+
+      {headerMenu.type === "col" && (
+        <>
+          <button
+            className={styles.item}
+            onClick={() => {
+              insertColAt(headerMenu.index);
+              closeHeaderMenu();
+            }}
+          >
+            열 삽입
+          </button>
+          <button
+            className={styles.itemDanger}
+            onClick={() => {
+              deleteColAt(headerMenu.index);
+              closeHeaderMenu();
+            }}
+          >
+            열 삭제
+          </button>
+        </>
+      )}
     </div>
   );
 }

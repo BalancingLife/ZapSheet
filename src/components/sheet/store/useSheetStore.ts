@@ -278,6 +278,12 @@ type HeaderMenuSlice = {
   openRowHeaderMenu: (index: number, x: number, y: number) => void;
   openColHeaderMenu: (index: number, x: number, y: number) => void;
   closeHeaderMenu: () => void;
+
+  // 행/열 삽입·삭제 액션
+  insertRowAt: (index: number) => Promise<void>;
+  deleteRowAt: (index: number) => Promise<void>;
+  insertColAt: (index: number) => Promise<void>;
+  deleteColAt: (index: number) => Promise<void>;
 };
 
 type SheetState = LayoutSlice &
@@ -2663,5 +2669,348 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   closeHeaderMenu: () => {
     set({ headerMenu: null });
+  },
+
+  insertRowAt: async (index: number) => {
+    const {
+      data,
+      stylesByCell,
+      rowHeights,
+      manualRowFlags,
+      autoSaveEnabled,
+      pushHistory,
+    } = get();
+
+    if (index < 0 || index >= ROW_COUNT) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = {};
+    const nextStyles: Record<string, CellStyle> = {};
+
+    // 1) data/스타일 행 기준으로 아래로 한 칸 밀기
+    for (const [k, v] of Object.entries(prevData)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (r >= index) {
+        const nr = r + 1;
+        if (nr >= ROW_COUNT) continue; // 끝에서 밀려 나간 셀은 버림
+        nextData[keyOf(nr, c)] = v;
+      } else {
+        nextData[k] = v;
+      }
+    }
+
+    for (const [k, style] of Object.entries(prevStyles)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (r >= index) {
+        const nr = r + 1;
+        if (nr >= ROW_COUNT) continue;
+        nextStyles[keyOf(nr, c)] = style;
+      } else {
+        nextStyles[k] = style;
+      }
+    }
+
+    // 2) rowHeights / manualRowFlags도 한 칸 밀기
+    const nextHeights = [...rowHeights];
+    const nextFlags = [...manualRowFlags];
+
+    for (let r = ROW_COUNT - 1; r > index; r--) {
+      nextHeights[r] = nextHeights[r - 1];
+      nextFlags[r] = nextFlags[r - 1];
+    }
+    nextHeights[index] = DEFAULT_ROW_HEIGHT;
+    nextFlags[index] = false;
+
+    // 3) 상태 반영 + selection/focus는 새 행 전체 선택
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      rowHeights: nextHeights,
+      manualRowFlags: nextFlags,
+      selection: {
+        sr: index,
+        sc: 0,
+        er: index,
+        ec: COLUMN_COUNT - 1,
+      },
+      focus: { row: index, col: 0 },
+      isSelecting: false,
+      anchor: { row: index, col: 0 },
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+      // 레이아웃도 저장 예약
+      debounceLayoutSave(() => {
+        get().saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
+  },
+
+  deleteRowAt: async (index: number) => {
+    const {
+      data,
+      stylesByCell,
+      rowHeights,
+      manualRowFlags,
+      autoSaveEnabled,
+      pushHistory,
+    } = get();
+
+    if (index < 0 || index >= ROW_COUNT) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = {};
+    const nextStyles: Record<string, CellStyle> = {};
+
+    // 1) data/스타일 행 기준으로 위로 당기기
+    for (const [k, v] of Object.entries(prevData)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (r < index) {
+        nextData[k] = v;
+      } else if (r > index) {
+        const nr = r - 1;
+        if (nr < 0) continue;
+        nextData[keyOf(nr, c)] = v;
+      }
+      // r === index 인 셀은 삭제
+    }
+
+    for (const [k, style] of Object.entries(prevStyles)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (r < index) {
+        nextStyles[k] = style;
+      } else if (r > index) {
+        const nr = r - 1;
+        if (nr < 0) continue;
+        nextStyles[keyOf(nr, c)] = style;
+      }
+      // r === index 인 스타일은 삭제
+    }
+
+    // 2) rowHeights / manualRowFlags도 위로 당기기
+    const nextHeights = [...rowHeights];
+    const nextFlags = [...manualRowFlags];
+
+    for (let r = index; r < ROW_COUNT - 1; r++) {
+      nextHeights[r] = nextHeights[r + 1];
+      nextFlags[r] = nextFlags[r + 1];
+    }
+    // 마지막 행은 디폴트 값으로 초기화
+    nextHeights[ROW_COUNT - 1] = DEFAULT_ROW_HEIGHT;
+    nextFlags[ROW_COUNT - 1] = false;
+
+    // 3) selection/focus: 삭제된 행 기준으로 클램프
+    const newRow = Math.min(index, ROW_COUNT - 1);
+
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      rowHeights: nextHeights,
+      manualRowFlags: nextFlags,
+      selection: {
+        sr: newRow,
+        sc: 0,
+        er: newRow,
+        ec: COLUMN_COUNT - 1,
+      },
+      focus: { row: newRow, col: 0 },
+      isSelecting: false,
+      anchor: { row: newRow, col: 0 },
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+      debounceLayoutSave(() => {
+        get().saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
+  },
+
+  insertColAt: async (index: number) => {
+    const { data, stylesByCell, columnWidths, autoSaveEnabled, pushHistory } =
+      get();
+
+    if (index < 0 || index >= COLUMN_COUNT) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = {};
+    const nextStyles: Record<string, CellStyle> = {};
+
+    // 1) data/스타일 열 기준으로 오른쪽으로 +1
+    for (const [k, v] of Object.entries(prevData)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (c >= index) {
+        const nc = c + 1;
+        if (nc >= COLUMN_COUNT) continue;
+        nextData[keyOf(r, nc)] = v;
+      } else {
+        nextData[k] = v;
+      }
+    }
+
+    for (const [k, style] of Object.entries(prevStyles)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (c >= index) {
+        const nc = c + 1;
+        if (nc >= COLUMN_COUNT) continue;
+        nextStyles[keyOf(r, nc)] = style;
+      } else {
+        nextStyles[k] = style;
+      }
+    }
+
+    // 2) columnWidths 밀기
+    const nextWidths = [...columnWidths];
+    for (let c = COLUMN_COUNT - 1; c > index; c--) {
+      nextWidths[c] = nextWidths[c - 1];
+    }
+    nextWidths[index] = DEFAULT_COL_WIDTH;
+
+    // 3) selection/focus: 새 열 전체 선택
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      columnWidths: nextWidths,
+      selection: {
+        sr: 0,
+        sc: index,
+        er: ROW_COUNT - 1,
+        ec: index,
+      },
+      focus: { row: 0, col: index },
+      isSelecting: false,
+      anchor: { row: 0, col: index },
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+      debounceLayoutSave(() => {
+        get().saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
+  },
+
+  deleteColAt: async (index: number) => {
+    const { data, stylesByCell, columnWidths, autoSaveEnabled, pushHistory } =
+      get();
+
+    if (index < 0 || index >= COLUMN_COUNT) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = {};
+    const nextStyles: Record<string, CellStyle> = {};
+
+    // 1) data/스타일 열 기준으로 왼쪽으로 -1
+    for (const [k, v] of Object.entries(prevData)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (c < index) {
+        nextData[k] = v;
+      } else if (c > index) {
+        const nc = c - 1;
+        if (nc < 0) continue;
+        nextData[keyOf(r, nc)] = v;
+      }
+      // c === index 는 삭제
+    }
+
+    for (const [k, style] of Object.entries(prevStyles)) {
+      const [rStr, cStr] = k.split(":");
+      const r = parseInt(rStr, 10);
+      const c = parseInt(cStr, 10);
+
+      if (c < index) {
+        nextStyles[k] = style;
+      } else if (c > index) {
+        const nc = c - 1;
+        if (nc < 0) continue;
+        nextStyles[keyOf(r, nc)] = style;
+      }
+    }
+
+    // 2) columnWidths 왼쪽으로 땡기기
+    const nextWidths = [...columnWidths];
+    for (let c = index; c < COLUMN_COUNT - 1; c++) {
+      nextWidths[c] = nextWidths[c + 1];
+    }
+    nextWidths[COLUMN_COUNT - 1] = DEFAULT_COL_WIDTH;
+
+    // 3) selection/focus: 삭제된 열 기준 클램프
+    const newCol = Math.min(index, COLUMN_COUNT - 1);
+
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      columnWidths: nextWidths,
+      selection: {
+        sr: 0,
+        sc: newCol,
+        er: ROW_COUNT - 1,
+        ec: newCol,
+      },
+      focus: { row: 0, col: newCol },
+      isSelecting: false,
+      anchor: { row: 0, col: newCol },
+      head: null,
+    });
+
+    if (autoSaveEnabled) {
+      await persistDataDiff(prevData, nextData);
+      await persistStyleDiff(prevStyles, nextStyles);
+      debounceLayoutSave(() => {
+        get().saveLayout().catch(console.error);
+      }, 500);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 }));
