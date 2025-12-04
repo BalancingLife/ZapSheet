@@ -196,7 +196,7 @@ export default function Footer() {
               className={`${styles.sheetItem} ${active ? styles.active : ""}`}
               onClick={() => setCurrentSheet(sheet.id)}
               onDoubleClick={() => startRename(sheet.id, sheet.name)}
-              onContextMenu={(e) => onTabContextMenu(e, sheet.id)}
+              onContextMenu={(e) => onTabContextMenu(e, sheet.id)} // onContexstMenu <= 우클릭 이벤트
               title={sheet.name}
             >
               {isEditing ? (

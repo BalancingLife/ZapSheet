@@ -18,6 +18,9 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
   const endResize = useSheetStore((s) => s.endResize);
   const resizing = useSheetStore((s) => s.resizing);
 
+  // 열 헤더 메뉴 오픈 액션
+  const openColHeaderMenu = useSheetStore((s) => s.openColHeaderMenu);
+
   useEffect(() => {
     if (!resizing || resizing.type !== "col") return;
     const onMove = (e: MouseEvent) => {
@@ -53,6 +56,12 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
         onMouseDown={(e) => {
           e.preventDefault();
           selectColumn(i, e.shiftKey); // Shift로 확장
+        }}
+        onContextMenu={(e) => {
+          // onContexstMenu <= 우클릭 이벤트
+          e.preventDefault();
+          e.stopPropagation();
+          openColHeaderMenu(i, e.clientX, e.clientY);
         }}
         title={colToLabel(i)}
       >

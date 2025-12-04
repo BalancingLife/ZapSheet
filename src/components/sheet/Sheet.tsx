@@ -4,6 +4,8 @@ import Corner from "./Corner";
 import ColHeader from "./ColHeader";
 import RowHeader from "./RowHeader";
 import Grid from "./Grid";
+import HeaderMenu from "./HeaderMenu";
+
 import { useSheetStore } from "./store/useSheetStore";
 import SheetSkeleton from "./SheetSkeleton";
 import { tsvToGrid } from "./store/useSheetStore";
@@ -247,18 +249,18 @@ export default function Sheet() {
       <div className={styles.corner}>
         <Corner />
       </div>
-
       <div className={styles.colHeader}>
         <ColHeader colHeaderHeight={colHeaderHeight} />
       </div>
-
       <div className={styles.rowHeader}>
         <RowHeader rowHeaderWidth={rowHeaderWidth} />
       </div>
-
       <div className={styles.gridBody}>
         <Grid />
       </div>
+
+      {/* row or column 헤더 우클릭 메뉴 */}
+      <HeaderMenu />
     </div>
   );
 }

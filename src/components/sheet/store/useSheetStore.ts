@@ -266,6 +266,20 @@ type SaveSlice = {
   loadUserSettings: () => Promise<void>;
 };
 
+// 헤더 우클릭 메뉴 상태
+type HeaderMenuState =
+  | { type: "row"; index: number; x: number; y: number }
+  | { type: "col"; index: number; x: number; y: number }
+  | null;
+
+// 헤더 우클릭 메뉴 Slice
+type HeaderMenuSlice = {
+  headerMenu: HeaderMenuState;
+  openRowHeaderMenu: (index: number, x: number, y: number) => void;
+  openColHeaderMenu: (index: number, x: number, y: number) => void;
+  closeHeaderMenu: () => void;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -278,7 +292,8 @@ type SheetState = LayoutSlice &
   FormulaSlice &
   StyleSlice &
   SheetListSlice &
-  SaveSlice;
+  SaveSlice &
+  HeaderMenuSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -2629,5 +2644,24 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         autoSaveEnabled: data?.auto_save_enabled ?? true,
       });
     });
+  },
+
+  // ---- HeaderMenuSlice ----
+  headerMenu: null,
+
+  openRowHeaderMenu: (index, x, y) => {
+    set({
+      headerMenu: { type: "row", index, x, y },
+    });
+  },
+
+  openColHeaderMenu: (index, x, y) => {
+    set({
+      headerMenu: { type: "col", index, x, y },
+    });
+  },
+
+  closeHeaderMenu: () => {
+    set({ headerMenu: null });
   },
 }));

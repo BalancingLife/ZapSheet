@@ -12,6 +12,8 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
   const selection = useSheetStore((s) => s.selection);
   const rowHeights = useSheetStore((s) => s.rowHeights);
 
+  const openRowHeaderMenu = useSheetStore((s) => s.openRowHeaderMenu);
+
   // 리사이즈 제어
   const startResizeRow = useSheetStore((s) => s.startResizeRow);
   const updateResize = useSheetStore((s) => s.updateResize);
@@ -55,6 +57,12 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
         onMouseDown={(e) => {
           e.preventDefault(); // 드래그 충돌 방지
           selectRow(i, e.shiftKey); // Shift 누르면 기존 selection에 합집합
+        }}
+        onContextMenu={(e) => {
+          // onContexstMenu <= 우클릭 이벤트
+          e.preventDefault();
+          e.stopPropagation();
+          openRowHeaderMenu(i, e.clientX, e.clientY);
         }}
         title={`${i + 1}`}
       >

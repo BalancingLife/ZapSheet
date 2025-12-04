@@ -1,0 +1,27 @@
+/* HeaderMenu.module.css */
+
+.menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #d0d4dd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.item {
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.item:hover {
+  background: #f3f4f6;
+}
