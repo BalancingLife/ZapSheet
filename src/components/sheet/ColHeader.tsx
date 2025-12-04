@@ -9,7 +9,7 @@ interface ColHeaderProps {
 }
 
 export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
-  const selectColumn = useSheetStore((s) => s.selectColumn);
+  const selectCol = useSheetStore((s) => s.selectCol);
   const selection = useSheetStore((s) => s.selection);
   const columnWidths = useSheetStore((s) => s.columnWidths);
 
@@ -55,7 +55,7 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
         tabIndex={0}
         onMouseDown={(e) => {
           e.preventDefault();
-          selectColumn(i, e.shiftKey); // Shift로 확장
+          selectCol(i, e.shiftKey); // Shift로 확장
         }}
         onContextMenu={(e) => {
           // onContexstMenu <= 우클릭 이벤트

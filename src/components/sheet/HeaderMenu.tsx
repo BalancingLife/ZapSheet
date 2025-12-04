@@ -12,45 +12,58 @@ export default function HeaderMenu() {
   const insertColAt = useSheetStore((s) => s.insertColAt);
   const deleteColAt = useSheetStore((s) => s.deleteColAt);
 
-  // 메뉴 열렸을 때 바깥 클릭하면 닫기
+  // 메뉴 외부 클릭 시 닫기
   useEffect(() => {
     if (!headerMenu) return;
 
-    const onClickOutside = () => {
-      closeHeaderMenu();
-    };
+    const onClickOutside = () => closeHeaderMenu();
 
     window.addEventListener("click", onClickOutside);
-    return () => {
-      window.removeEventListener("click", onClickOutside);
-    };
+    return () => window.removeEventListener("click", onClickOutside);
   }, [headerMenu, closeHeaderMenu]);
 
   if (!headerMenu) return null;
 
-  const { x, y } = headerMenu;
+  const { type, index, x, y } = headerMenu;
 
   return (
     <div
       className={styles.menu}
       style={{ left: x, top: y }}
-      onClick={(e) => e.stopPropagation()} // 자기 자신 클릭은 바깥으로 안 나가게
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
     >
-      {headerMenu.type === "row" && (
+      {/* ------------------------------ */}
+      {/* 행 메뉴: 위/아래 삽입 + 삭제 */}
+      {/* ------------------------------ */}
+      {type === "row" && (
         <>
           <button
             className={styles.item}
             onClick={() => {
-              insertRowAt(headerMenu.index);
+              insertRowAt(index); // 위에 삽입
               closeHeaderMenu();
             }}
           >
-            행 삽입
+            위에 행 삽입
           </button>
+
+          <button
+            className={styles.item}
+            onClick={() => {
+              insertRowAt(index + 1); // 아래에 삽입
+              closeHeaderMenu();
+            }}
+          >
+            아래에 행 삽입
+          </button>
+
+          <hr className={styles.divider} />
+
           <button
             className={styles.itemDanger}
             onClick={() => {
-              deleteRowAt(headerMenu.index);
+              deleteRowAt(index);
               closeHeaderMenu();
             }}
           >
@@ -59,21 +72,37 @@ export default function HeaderMenu() {
         </>
       )}
 
-      {headerMenu.type === "col" && (
+      {/* ------------------------------ */}
+      {/* 열 메뉴: 왼/오 삽입 + 삭제 */}
+      {/* ------------------------------ */}
+      {type === "col" && (
         <>
           <button
             className={styles.item}
             onClick={() => {
-              insertColAt(headerMenu.index);
+              insertColAt(index); // 왼쪽 삽입
               closeHeaderMenu();
             }}
           >
-            열 삽입
+            왼쪽에 열 삽입
           </button>
+
+          <button
+            className={styles.item}
+            onClick={() => {
+              insertColAt(index + 1); // 오른쪽 삽입
+              closeHeaderMenu();
+            }}
+          >
+            오른쪽에 열 삽입
+          </button>
+
+          <hr className={styles.divider} />
+
           <button
             className={styles.itemDanger}
             onClick={() => {
-              deleteColAt(headerMenu.index);
+              deleteColAt(index);
               closeHeaderMenu();
             }}
           >

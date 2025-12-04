@@ -118,7 +118,7 @@ type SelectionSlice = {
   updateSelection: (pos: Pos) => void;
   endSelection: () => void;
 
-  selectColumn: (col: number, extend?: boolean) => void;
+  selectCol: (col: number, extend?: boolean) => void;
   selectRow: (row: number, extend?: boolean) => void;
   selectAll: () => void;
   clearSelection: () => void;
@@ -267,10 +267,13 @@ type SaveSlice = {
 };
 
 // 헤더 우클릭 메뉴 상태
-type HeaderMenuState =
-  | { type: "row"; index: number; x: number; y: number }
-  | { type: "col"; index: number; x: number; y: number }
-  | null;
+
+type HeaderMenuState = null | {
+  type: "row" | "col";
+  index: number; // 행/열 인덱스(0-based)
+  x: number;
+  y: number;
+};
 
 // 헤더 우클릭 메뉴 Slice
 type HeaderMenuSlice = {
@@ -1267,7 +1270,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   // 열 헤더 클릭/Shift+클릭 시 열 전체 선택.
-  selectColumn: (col, extend = false) => {
+  selectCol: (col, extend = false) => {
     const { focus, setFocus, editingSource } = get();
     const isFormulaEditing = editingSource === "formula";
 
