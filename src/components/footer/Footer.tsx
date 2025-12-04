@@ -69,14 +69,6 @@ export default function Footer() {
     return () => window.removeEventListener("click", onGlobalClick);
   }, []);
 
-  // 피커 열릴 때 현재 시트로 포커스 인덱스 세팅
-  useEffect(() => {
-    if (pickerOpen) {
-      const idx = sheets.findIndex((s) => s.id === currentSheetId);
-      setPickerIndex(idx >= 0 ? idx : 0);
-    }
-  }, [pickerOpen, sheets, currentSheetId]);
-
   const startRename = (id: string, currentName: string) => {
     setEditingId(id);
     setEditingValue(currentName);
@@ -118,13 +110,26 @@ export default function Footer() {
     setMenu({ open: false, x: 0, y: 0, sheetId: null });
   };
 
-  // 햄버거 클릭 → 시트 피커 토글
   const openPickerFromButton = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (!currentSheetId) return;
+
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const idx = sheets.findIndex((s) => s.id === currentSheetId);
+    const safeIndex = idx >= 0 ? idx : 0;
+
     setPickerPos({ x: rect.left, y: rect.top });
-    setPickerOpen((v) => !v);
+
+    setPickerOpen((prevOpen) => {
+      const nextOpen = !prevOpen;
+
+      // 열리는 순간에만 인덱스 세팅
+      if (nextOpen) {
+        setPickerIndex(safeIndex);
+      }
+      return nextOpen;
+    });
+
     // 컨텍스트 메뉴는 닫기
     setMenu((m) => ({ ...m, open: false }));
   };
