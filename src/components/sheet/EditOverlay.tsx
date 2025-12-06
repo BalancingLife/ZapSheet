@@ -127,10 +127,13 @@ export default function EditOverlay({
           color: cellStyle?.textColor,
         }}
         onKeyDown={(e) => {
+          e.stopPropagation();
+
           const v = e.currentTarget.value;
 
           if (e.key === "Enter") {
             e.preventDefault();
+
             commitEdit(v);
             move("down");
           } else if (e.key === "Escape") {
@@ -139,7 +142,6 @@ export default function EditOverlay({
           } else if (e.key === "Tab") {
             e.preventDefault();
             commitEdit(v);
-            move("right");
           }
         }}
         onBlur={(e) => {

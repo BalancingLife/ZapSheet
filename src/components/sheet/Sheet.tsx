@@ -63,13 +63,13 @@ export default function Sheet() {
   // 전역 키보드 처리
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
-      // 인풋/텍스트영역/콘텐츠에디터블이면 전역 키보드 핸들러 무시
-      const ae = document.activeElement as HTMLElement | null;
-      const tag = (ae?.tagName || "").toLowerCase();
+      // 이벤트가 실제로 발생한 타겟 기준으로 텍스트 필드 여부 체크
+      const target = e.target as HTMLElement | null;
+      const tag = (target?.tagName || "").toLowerCase();
       const isTextField =
         tag === "input" ||
         tag === "textarea" ||
-        (ae && (ae as HTMLElement).isContentEditable === true);
+        (target && target.isContentEditable === true);
 
       if (isTextField) return;
 
@@ -118,7 +118,7 @@ export default function Sheet() {
         return;
       }
       // 4) Enter/F2: 현재 focus 편집 시작
-      if ((e.key === "Enter" || e.key === "F2") && focus) {
+      if ((e.key === "Enter" || e.key === "F2") && focus && !editing) {
         e.preventDefault();
         e.stopPropagation();
         startEdit(focus);

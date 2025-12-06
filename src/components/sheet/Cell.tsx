@@ -30,10 +30,7 @@ function Cell({ row, col }: CellProps) {
   const updateSel = useSheetStore((s) => s.updateSelection);
   const endSel = useSheetStore((s) => s.endSelection);
 
-  const move = useSheetStore((s) => s.move);
   const startEdit = useSheetStore((s) => s.startEdit);
-  const cancelEdit = useSheetStore((s) => s.cancelEdit);
-  const commitEdit = useSheetStore((s) => s.commitEdit);
 
   const resolveCell = useSheetStore((s) => s.resolveCellNumeric);
 
@@ -109,17 +106,6 @@ function Cell({ row, col }: CellProps) {
       cellRef.current?.focus();
     }
   }, [isFocused, isEditing, editingSource]);
-
-  // 편집 커밋
-  const commit = (nextVal?: string) => {
-    commitEdit(nextVal ?? val);
-  };
-
-  // ESC시 편집 취소, 내용 null 처리
-  const cancel = () => {
-    cancelEdit();
-    setFocus({ row, col });
-  };
 
   //  Shift면 포커스 금지 + 브라우저 포커스 이동 차단
   const onMouseDown = useCallback(
