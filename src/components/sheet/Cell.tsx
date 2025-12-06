@@ -38,13 +38,36 @@ function Cell({ row, col }: CellProps) {
   const resolveCell = useSheetStore((s) => s.resolveCellNumeric);
 
   const val = useSheetStore((s) => {
-    const isThis = s.editing?.row === row && s.editing?.col === col;
+    // ① 이 셀이 병합 영역에 속해 있으면 master 좌표로 강제
+    const mr = s.getMergeRegionAt(row, col);
+    const baseRow = mr ? mr.sr : row;
+    const baseCol = mr ? mr.sc : col;
+    const key = `${baseRow}:${baseCol}`;
+
+    // ② 포뮬라 편집 중이면, master 기준으로만 mirror 사용
+    const isThis = s.editing?.row === baseRow && s.editing?.col === baseCol;
     if (isThis && s.editingSource === "formula") return s.formulaMirror;
-    return s.data[`${row}:${col}`] ?? ""; // getValue 대신 직접 구독
+
+    return s.data[key] ?? "";
   });
+
   const displayVal = toDisplayString(val, { resolveCell });
   const isErr = displayVal === DISPLAY_ERROR;
-  const style = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
+  const style = useSheetStore((s) => {
+    const mr = s.getMergeRegionAt(row, col);
+    const baseRow = mr ? mr.sr : row;
+    const baseCol = mr ? mr.sc : col;
+    return s.stylesByCell[`${baseRow}:${baseCol}`];
+  });
+
+  const fontSize = useSheetStore((s) => {
+    const mr = s.getMergeRegionAt(row, col);
+    const baseRow = mr ? mr.sr : row;
+    const baseCol = mr ? mr.sc : col;
+    return (
+      s.stylesByCell[`${baseRow}:${baseCol}`]?.fontSize ?? DEFAULT_FONT_SIZE
+    );
+  });
 
   const isDisplayNumeric = isNumericValue(displayVal);
 
@@ -60,14 +83,25 @@ function Cell({ row, col }: CellProps) {
       ? styles.alignBottomCenter
       : styles.alignBottomLeft;
 
-  const fontSize = useSheetStore(
-    (s) => s.stylesByCell[`${row}:${col}`]?.fontSize ?? DEFAULT_FONT_SIZE
-  );
-
   const cellRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const borderCss = useBorderCss(row, col);
+
+  // ✅ 병합 정보 조회
+  const mergeRegion = useSheetStore((s) => s.getMergeRegionAt(row, col));
+  const isMerged = !!mergeRegion;
+  const isMergeMaster =
+    isMerged && mergeRegion!.sr === row && mergeRegion!.sc === col;
+
+  // ✅ 병합 영역 내부의 경계선 제거 (안쪽 경계선 숨기기)
+  const mergedBorderCss: React.CSSProperties = { ...borderCss };
+  if (mergeRegion) {
+    if (row > mergeRegion.sr) mergedBorderCss.borderTop = "none";
+    if (row < mergeRegion.er) mergedBorderCss.borderBottom = "none";
+    if (col > mergeRegion.sc) mergedBorderCss.borderLeft = "none";
+    if (col < mergeRegion.ec) mergedBorderCss.borderRight = "none";
+  }
 
   useEffect(() => {
     if (isFocused && isEditing && editingSource === "cell") {
@@ -122,13 +156,18 @@ function Cell({ row, col }: CellProps) {
 
       const extend = e.shiftKey === true;
 
+      //  병합 영역 안에서 클릭 시, 항상 master 셀 기준으로 selection/focus
+      const baseRow = mergeRegion ? mergeRegion.sr : row;
+      const baseCol = mergeRegion ? mergeRegion.sc : col;
+
       // 텍스트 선택/포커스 이동 방지 (특히 Shift-클릭에서 DOM 포커스 튀는 것 막기)
       e.preventDefault();
-      startSel({ row, col }, extend);
+      startSel({ row: baseRow, col: baseCol }, extend);
       //  포뮬라 편집 중엔 setFocus 금지 (mirror가 덮어씌워지는 문제 방지)
-      if (!extend && !isFormulaEditing) setFocus({ row, col });
+      if (!extend && !isFormulaEditing)
+        setFocus({ row: baseRow, col: baseCol });
     },
-    [row, col, startSel, setFocus]
+    [row, col, startSel, setFocus, mergeRegion]
   );
 
   const onMouseEnter = useCallback(() => {
@@ -157,6 +196,9 @@ function Cell({ row, col }: CellProps) {
   }, [endSel, row, col]);
 
   const isCellEditing = isEditing && editingSource === "cell"; // ★
+
+  // ✅ 이 셀이 내용/타이틀을 렌더할지 여부
+  const shouldRenderContent = !mergeRegion || isMergeMaster;
 
   if (isCellEditing) {
     return (
@@ -211,7 +253,7 @@ function Cell({ row, col }: CellProps) {
         isFocused ? styles.focused : ""
       } ${isSelected ? "selected" : ""} ${isErr ? styles.error : ""}`}
       style={{
-        ...borderCss,
+        ...mergedBorderCss,
         color: isErr ? "#d93025" : style?.textColor,
         backgroundColor: style?.bgColor,
         fontSize: `${fontSize}px`,
@@ -222,14 +264,20 @@ function Cell({ row, col }: CellProps) {
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}
-      onDoubleClick={() => startEdit({ row, col })}
-      title={val ?? ""}
+      // ✅ 병합된 내부 셀은 더블클릭 편집 막기 (항상 master에서만 편집)
+      onDoubleClick={
+        mergeRegion && !isMergeMaster
+          ? undefined
+          : () => startEdit({ row, col })
+      }
+      title={shouldRenderContent ? val ?? "" : ""}
     >
-      {isEditing && editingSource === "formula"
-        ? val // 포뮬라 편집 중엔 수식 그대로
-        : isDisplayNumeric
-        ? formatWithComma(displayVal)
-        : displayVal}
+      {shouldRenderContent &&
+        (isEditing && editingSource === "formula"
+          ? val // 포뮬라 편집 중엔 수식 그대로
+          : isDisplayNumeric
+          ? formatWithComma(displayVal)
+          : displayVal)}
     </div>
   );
 }

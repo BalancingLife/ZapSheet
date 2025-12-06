@@ -295,6 +295,20 @@ type HeaderMenuSlice = {
   deleteSelectedCols: () => Promise<void>;
 };
 
+type MergeSlice = {
+  /** 병합된 영역들의 리스트 (좌상단 기준 Rect) */
+  mergedRegions: Rect[];
+
+  /** 현재 selection을 하나의 병합 셀로 만들기 */
+  mergeSelection: () => Promise<void> | void;
+
+  /** 현재 selection에 걸쳐 있는 병합 해제 */
+  unmergeSelection: () => void;
+
+  /** (row,col)이 어떤 병합 영역 안에 있는지 조회 */
+  getMergeRegionAt: (row: number, col: number) => Rect | null;
+};
+
 type SheetState = LayoutSlice &
   LayoutPersistSlice &
   ResizeSlice &
@@ -308,7 +322,8 @@ type SheetState = LayoutSlice &
   StyleSlice &
   SheetListSlice &
   SaveSlice &
-  HeaderMenuSlice;
+  HeaderMenuSlice &
+  MergeSlice;
 
 // =====================
 // Helpers (공통 유틸)
@@ -479,17 +494,75 @@ function extendSelectionWith(
   dir: Dir,
   strategy: "step" | "edge"
 ) {
-  const { focus, anchor, head, selection } = get();
+  const state = get();
+  const { focus, anchor, head, selection, getMergeRegionAt } = state;
+
   const init = prepareAnchorHead({ focus, anchor, head, selection });
   if (!init) return;
+
   const { a } = init;
   let { h } = init;
 
-  // strategy가 "step" 이냐 "edge"냐에 따라서 step1(), toEdge() 함수 호출
-  const moveHead = strategy === "step" ? step1 : toEdge;
-  h = moveHead(h, dir);
+  // ---------------------------
+  // 1) head가 병합이면 edge로 보정 후 이동 시작
+  // ---------------------------
+  const mrHead = getMergeRegionAt(h.row, h.col);
+  if (mrHead) {
+    if (dir === "up") {
+      h = { row: mrHead.sr, col: h.col };
+    } else if (dir === "down") {
+      h = { row: mrHead.er, col: h.col };
+    } else if (dir === "left") {
+      h = { row: h.row, col: mrHead.sc };
+    } else if (dir === "right") {
+      h = { row: h.row, col: mrHead.ec };
+    }
+  }
 
-  set(updateSelectionFrom(a, h));
+  // ---------------------------
+  // 2) step or edge 이동
+  // ---------------------------
+  const moveHead = strategy === "step" ? step1 : toEdge;
+  let newH = moveHead(h, dir);
+
+  // ---------------------------
+  // 3) 도착지가 병합 영역이면 master(좌상단)으로 스냅
+  // ---------------------------
+  const mrDest = getMergeRegionAt(newH.row, newH.col);
+  if (mrDest) {
+    newH = { row: mrDest.sr, col: mrDest.sc };
+  }
+
+  // ---------------------------
+  // 4) anchor/head 각각 병합 Rect 확장 후 selection 계산
+  // ---------------------------
+  const aMr = getMergeRegionAt(a.row, a.col);
+  const aRect = aMr
+    ? { sr: aMr.sr, sc: aMr.sc, er: aMr.er, ec: aMr.ec }
+    : { sr: a.row, sc: a.col, er: a.row, ec: a.col };
+
+  const hMr = getMergeRegionAt(newH.row, newH.col);
+  const hRect = hMr
+    ? { sr: hMr.sr, sc: hMr.sc, er: hMr.er, ec: hMr.ec }
+    : { sr: newH.row, sc: newH.col, er: newH.row, ec: newH.col };
+
+  const finalRect = {
+    sr: Math.min(aRect.sr, hRect.sr),
+    sc: Math.min(aRect.sc, hRect.sc),
+    er: Math.max(aRect.er, hRect.er),
+    ec: Math.max(aRect.ec, hRect.ec),
+  };
+
+  // ---------------------------
+  // 5) selection + head + focus 업데이트
+  // ---------------------------
+  set({
+    anchor: a,
+    head: newH,
+    selection: finalRect,
+    focus: newH,
+    isSelecting: false,
+  });
 }
 
 // 이 변수는 함수가 여러 번 불려도 계속 기억되어야 함
@@ -942,6 +1015,16 @@ function evalCellByKey(
   return result;
 }
 
+// 두 Rect가 한 칸이라도 겹치는지 여부
+function rectsIntersect(a: Rect, b: Rect): boolean {
+  return !(a.er < b.sr || a.sr > b.er || a.ec < b.sc || a.sc > b.ec);
+}
+
+// 특정 셀(row,col)이 Rect 안에 포함되는지
+function rectContainsCell(r: Rect, row: number, col: number): boolean {
+  return row >= r.sr && row <= r.er && col >= r.sc && col <= r.ec;
+}
+
 // =====================
 // Helpers 끝 (공통 유틸)
 // =====================
@@ -1192,14 +1275,25 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   focus: { row: 0, col: 0 },
 
   setFocus: (pos) => {
-    set({ focus: pos });
-
-    if (pos) {
-      const { syncMirrorToFocus } = get();
-      syncMirrorToFocus(); // 현재 focus 셀의 값을 읽어서 formulaMirror에 동기화.
-    } else {
-      set({ formulaMirror: "" });
+    // 포커스를 완전히 없애는 경우
+    if (!pos) {
+      set({ focus: null, formulaMirror: "" });
+      return;
     }
+
+    const { getMergeRegionAt, syncMirrorToFocus } = get();
+
+    // 🔍 이 좌표가 병합 영역 안인지 확인
+    const mr = getMergeRegionAt(pos.row, pos.col);
+
+    // 병합 영역 안이면 좌상단으로 스냅
+    const nextRow = mr ? mr.sr : pos.row;
+    const nextCol = mr ? mr.sc : pos.col;
+
+    set({ focus: { row: nextRow, col: nextCol } });
+
+    // ✅ 포뮬라 입력창 mirror는 "실제 포커스된 셀" 기준으로 동기화
+    syncMirrorToFocus();
   },
 
   clearFocus: () => {
@@ -1209,22 +1303,54 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // move(dir) : ↑↓←→ 키로 한 칸씩 포커스를 옮길 때 쓰는 함수
   move: (dir) => {
-    const { focus } = get();
+    const { focus, getMergeRegionAt } = get();
     if (!focus) return;
 
-    // step1(focus, dir) : dir 방향으로 한 칸 이동 + 시트 경계(clamp) 안으로 제한.
-    const nextPos = step1(focus, dir);
+    let base = focus;
 
-    //setFocusAsSingleSelection(set, nextPos) : focus를 새 위치로 바꾸고, selection도 그 한 셀만 선택된 상태로 맞추고, isSelecting, anchor, head 초기화, 마지막에 syncMirrorToFocus()까지 호출.
+    // 1) 현재 포커스가 병합 master면, 병합 블록의 가장자리에서 나가도록 출발점 보정
+    const mrHere = getMergeRegionAt(focus.row, focus.col);
+    if (mrHere && mrHere.sr === focus.row && mrHere.sc === focus.col) {
+      if (dir === "down") {
+        base = { row: mrHere.er, col: focus.col };
+      } else if (dir === "up") {
+        base = { row: mrHere.sr, col: focus.col };
+      } else if (dir === "right") {
+        base = { row: focus.row, col: mrHere.ec };
+      } else if (dir === "left") {
+        base = { row: focus.row, col: mrHere.sc };
+      }
+    }
+
+    // 2) 한 칸 이동 (시트 경계 클램프 포함)
+    const stepPos = step1(base, dir);
+
+    // 3) 도착지가 병합 영역 내부라면 master 좌표로 스냅
+    const mrDest = getMergeRegionAt(stepPos.row, stepPos.col);
+    const nextPos = mrDest ? { row: mrDest.sr, col: mrDest.sc } : stepPos;
+
+    // 4) 최종 포커스 + selection (병합 존중)
     setFocusAsSingleSelection(set, nextPos);
   },
 
   // 해당 방향 끝(엣지)로 점프하는 이동
   moveCtrlEdge: (dir) => {
-    const { focus } = get();
+    const { focus, getMergeRegionAt } = get();
     if (!focus) return;
 
-    setFocusAsSingleSelection(set, toEdge(focus, dir)); // step1 대신 toEdge 사용
+    // 1) 현재 병합 master면, master 기준으로 edge 계산
+    const mrHere = getMergeRegionAt(focus.row, focus.col);
+    const fromPos = mrHere ? { row: mrHere.sr, col: mrHere.sc } : focus;
+
+    // 2) toEdge로 점프
+    const edgePos = toEdge(fromPos, dir);
+
+    // 3) 도착지가 병합 영역 내부라면 master로 스냅
+    const mrDest = getMergeRegionAt(edgePos.row, edgePos.col);
+    const finalPos = mrDest ? { row: mrDest.sr, col: mrDest.sc } : edgePos;
+
+    // 4) 최종 포커스 + selection
+    setFocusAsSingleSelection(set, finalPos);
   },
 
   // SelectionSlice
@@ -1263,12 +1389,42 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // 마우스를 드래그하는 동안, 선택 영역을 계속 업데이트.
   updateSelection: (pos) => {
-    const { anchor, isSelecting } = get();
+    const { anchor, isSelecting, mergedRegions } = get();
 
-    // 드래그 중이 아니거나 anchor가 없다면 return
     if (!isSelecting || !anchor) return;
 
-    set({ head: pos, selection: normRect(anchor, pos) });
+    // 1) 기본 selection rect (앵커 vs 드래그 위치)
+    let rect: Rect = normRect(anchor, pos);
+
+    // 2) rect와 겹치는 모든 병합 영역을 통째로 포함하도록 확장
+    let changed = true;
+    while (changed) {
+      changed = false;
+
+      for (const mr of mergedRegions) {
+        if (!rectsIntersect(rect, mr)) continue;
+
+        const next: Rect = {
+          sr: Math.min(rect.sr, mr.sr),
+          sc: Math.min(rect.sc, mr.sc),
+          er: Math.max(rect.er, mr.er),
+          ec: Math.max(rect.ec, mr.ec),
+        };
+
+        if (
+          next.sr !== rect.sr ||
+          next.sc !== rect.sc ||
+          next.er !== rect.er ||
+          next.ec !== rect.ec
+        ) {
+          rect = next;
+          changed = true;
+        }
+      }
+    }
+
+    // head는 그대로 현재 마우스 위치(pos), selection은 병합 포함 직사각형
+    set({ head: pos, selection: rect });
   },
 
   endSelection: () => {
@@ -3231,5 +3387,116 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     } else {
       set({ hasUnsavedChanges: true });
     }
+  },
+
+  // ==== MergeSlice ====
+  mergedRegions: [],
+
+  mergeSelection: async () => {
+    const {
+      selection,
+      data,
+      stylesByCell,
+      mergedRegions,
+      autoSaveEnabled,
+      pushHistory,
+    } = get();
+
+    if (!selection) return;
+
+    // selection 정규화
+    const rect: Rect = normRect(
+      { row: selection.sr, col: selection.sc },
+      { row: selection.er, col: selection.ec }
+    );
+
+    // 1칸이면 병합 의미 없음
+    if (rect.sr === rect.er && rect.sc === rect.ec) return;
+
+    pushHistory();
+
+    const prevData = data;
+    const prevStyles = stylesByCell;
+
+    const nextData: Record<string, string> = { ...prevData };
+    const nextStyles: Record<string, CellStyle> = { ...prevStyles };
+
+    // 기준 셀 = 좌상단
+    const masterKey = keyOf(rect.sr, rect.sc);
+    const masterValue = prevData[masterKey] ?? "";
+    const masterStyle = prevStyles[masterKey];
+
+    // 값/스타일 정리:
+    // - 좌상단 셀만 값/스타일 유지
+    // - 나머지 셀은 지움
+    for (let r = rect.sr; r <= rect.er; r++) {
+      for (let c = rect.sc; c <= rect.ec; c++) {
+        const k = keyOf(r, c);
+        if (r === rect.sr && c === rect.sc) {
+          // 기준 셀
+          nextData[k] = masterValue;
+          if (masterStyle) nextStyles[k] = masterStyle;
+        } else {
+          delete nextData[k];
+          delete nextStyles[k];
+        }
+      }
+    }
+
+    // 겹치는 기존 병합 영역 제거 후, 새 병합 영역 추가
+    const nextMerged = mergedRegions
+      .filter((mr) => !rectsIntersect(mr, rect))
+      .concat(rect);
+
+    set({
+      data: nextData,
+      stylesByCell: nextStyles,
+      mergedRegions: nextMerged,
+      selection: rect,
+      focus: { row: rect.sr, col: rect.sc },
+      isSelecting: false,
+      anchor: { row: rect.sr, col: rect.sc },
+      head: { row: rect.er, col: rect.ec },
+    });
+
+    if (!autoSaveEnabled) {
+      set({ hasUnsavedChanges: true });
+    }
+  },
+
+  unmergeSelection: () => {
+    const { selection, mergedRegions, pushHistory } = get();
+    if (!selection) return;
+
+    const rect: Rect = normRect(
+      { row: selection.sr, col: selection.sc },
+      { row: selection.er, col: selection.ec }
+    );
+
+    pushHistory();
+
+    // 같은 영역(또는 겹치는 영역)을 mergedRegions에서 제거
+    const nextMerged = mergedRegions.filter(
+      (mr) =>
+        !(
+          mr.sr === rect.sr &&
+          mr.sc === rect.sc &&
+          mr.er === rect.er &&
+          mr.ec === rect.ec
+        )
+    );
+
+    set({ mergedRegions: nextMerged });
+
+    // 병합 해제 후에는 좌상단 한 칸만 단일 선택 + 포커스
+    setFocusAsSingleSelection(set, { row: rect.sr, col: rect.sc });
+  },
+
+  getMergeRegionAt: (row, col) => {
+    const { mergedRegions } = get();
+    for (const mr of mergedRegions) {
+      if (rectContainsCell(mr, row, col)) return mr;
+    }
+    return null;
   },
 }));

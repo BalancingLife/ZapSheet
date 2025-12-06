@@ -74,19 +74,33 @@ export default function SelectionOverlay({
   const fillPreview = useSheetStore((s) => s.fillPreview);
   const setFillPreview = useSheetStore((s) => s.setFillPreview);
 
+  // ✅ 병합 정보 조회 함수
+  const getMergeRegionAt = useSheetStore((s) => s.getMergeRegionAt);
+
   // fill handle 드래그 중인지
   const isFillingRef = useRef(false);
   const baseSelectionRef = useRef<Rect | null>(null);
 
   if (!selection) return null;
 
+  // ✅ selection이 1x1 + 그 셀이 병합 영역 안이면 → 시각적으로는 병합 전체를 selection으로 취급
+  const isSingleCell =
+    selection.sr === selection.er && selection.sc === selection.ec;
+
+  const mergeRegion = isSingleCell
+    ? getMergeRegionAt(selection.sr, selection.sc)
+    : null;
+
+  const visualSelection = mergeRegion ?? selection;
+
   const count =
-    (selection.er - selection.sr + 1) * (selection.ec - selection.sc + 1);
+    (visualSelection.er - visualSelection.sr + 1) *
+    (visualSelection.ec - visualSelection.sc + 1);
 
   const showOverlay = !isSelecting && count >= 2; // 기존처럼: 2칸 이상일 때만 파란 영역
   const showHandle = !isSelecting && !!selection; // ✅ 한 칸이어도 핸들은 항상 노출
 
-  const mainBox = rectToBox(selection, columnWidths, rowHeights);
+  const mainBox = rectToBox(visualSelection, columnWidths, rowHeights);
   const previewBox =
     fillPreview && rectToBox(fillPreview, columnWidths, rowHeights);
 
@@ -97,7 +111,17 @@ export default function SelectionOverlay({
     if (!gridRef.current || !selection) return;
 
     isFillingRef.current = true;
-    baseSelectionRef.current = selection;
+
+    // ✅ 여기서도 "실제 채우기 기준"은 병합 전체로 보정
+    const state = useSheetStore.getState();
+    const isSingle =
+      selection.sr === selection.er && selection.sc === selection.ec;
+    const mergeRegion = isSingle
+      ? state.getMergeRegionAt(selection.sr, selection.sc)
+      : null;
+
+    baseSelectionRef.current = mergeRegion ?? selection;
+
     setFillPreview(null);
 
     const onMove = (ev: MouseEvent) => {
