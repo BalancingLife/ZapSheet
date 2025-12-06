@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useSheetStore } from "./store/useSheetStore";
 import type { Rect } from "./store/useSheetStore";
 import styles from "./EditOverlay.module.css";
+import { DEFAULT_FONT_SIZE } from "./SheetConstants";
 
 type EditOverlayProps = {
   columnWidths: number[];
@@ -28,9 +29,7 @@ function rectToBox(
   };
 
   const top = colHeaderHeight + sum(rowHeights, 0, rect.sr - 1) - scrollY;
-
   const left = rowHeaderWidth + sum(columnWidths, 0, rect.sc - 1) - scrollX;
-
   const width = sum(columnWidths, rect.sc, rect.ec);
   const height = sum(rowHeights, rect.sr, rect.er);
 
@@ -54,6 +53,18 @@ export default function EditOverlay({
 
   const formulaMirror = useSheetStore((s) => s.formulaMirror);
   const setFormulaInput = useSheetStore((s) => s.setFormulaInput);
+
+  // 편집 대상 셀(master 기준) 스타일 가져오기
+  const cellStyle = useSheetStore((s) => {
+    const ed = s.editing;
+    if (!ed) return undefined;
+    const mr = s.getMergeRegionAt(ed.row, ed.col);
+    const baseRow = mr ? mr.sr : ed.row;
+    const baseCol = mr ? mr.sc : ed.col;
+    return s.stylesByCell[`${baseRow}:${baseCol}`];
+  });
+
+  const fontSize = cellStyle?.fontSize ?? DEFAULT_FONT_SIZE;
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -95,7 +106,8 @@ export default function EditOverlay({
         width: box.width,
         height: box.height,
         zIndex: 5000, // 셀 위
-        pointerEvents: "none",
+        // 편집 중엔 input이 클릭 가능해야 하니까 auto
+        pointerEvents: "auto",
       }}
     >
       <input
@@ -103,6 +115,17 @@ export default function EditOverlay({
         className={styles.editorInput}
         value={formulaMirror}
         onChange={(e) => setFormulaInput(e.target.value)}
+        style={{
+          //  편집 대상 셀 스타일 반영
+          width: "100%",
+          height: "100%",
+          boxSizing: "border-box",
+          fontSize: `${fontSize}px`,
+          fontWeight: cellStyle?.bold ? "bold" : "normal",
+          fontStyle: cellStyle?.italic ? "italic" : "normal",
+          textDecoration: cellStyle?.underline ? "underline" : "none",
+          color: cellStyle?.textColor,
+        }}
         onKeyDown={(e) => {
           const v = e.currentTarget.value;
 
