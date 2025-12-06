@@ -43,6 +43,7 @@ export type CellStyle = {
   border?: CellBorder;
 
   textAlign?: "left" | "center" | "right";
+  verticalAlign?: "top" | "middle" | "bottom";
 };
 
 export type BorderLineStyle = "solid" | "dashed" | "dotted";

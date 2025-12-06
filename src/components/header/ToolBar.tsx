@@ -41,11 +41,17 @@ export default function ToolBar() {
   const isItalic = !!currentStyle?.italic;
   const isUnderline = !!currentStyle?.underline;
 
-  //  현재 정렬 상태 (없으면 left)
+  //  현재 가로 정렬 상태 (없으면 left)
   const currentAlign = (currentStyle?.textAlign ?? "left") as
     | "left"
     | "center"
     | "right";
+
+  //  현재 세로 정렬 상태 (없으면 bottom)
+  const currentVAlign = (currentStyle?.verticalAlign ?? "bottom") as
+    | "top"
+    | "middle"
+    | "bottom";
 
   const handleTextColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const color = e.target.value;
@@ -67,7 +73,6 @@ export default function ToolBar() {
     const n = Number(next);
     if (Number.isNaN(n)) return;
     setFontSize(n);
-    // 적용 후 input도 반영 (useEffect로도 동기화되지만 즉시 반영해 깜빡임 방지)
     setTempFontSize(String(n));
   };
 
@@ -75,31 +80,41 @@ export default function ToolBar() {
   const stepUp = () => apply(fontSize + 1);
 
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    setTempFontSize(e.target.value); // 입력만 저장
+    setTempFontSize(e.target.value);
   };
 
   const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
     if (e.key === "Enter") {
       const raw = tempFontSize.trim();
-      if (raw === "") return; // 빈 값은 무시
-      apply(Number(raw)); // 엔터로 확정 적용
+      if (raw === "") return;
+      apply(Number(raw));
     }
   };
 
   const toggleBold = useCallback(() => {
     applyStyleToSelection({ bold: !isBold });
   }, [applyStyleToSelection, isBold]);
+
   const toggleItalic = useCallback(() => {
     applyStyleToSelection({ italic: !isItalic });
   }, [applyStyleToSelection, isItalic]);
+
   const toggleUnderline = useCallback(() => {
     applyStyleToSelection({ underline: !isUnderline });
   }, [applyStyleToSelection, isUnderline]);
 
-  // 글자 정렬 핸들러
+  // 글자 가로 정렬 핸들러
   const setTextAlign = useCallback(
     (align: "left" | "center" | "right") => {
       applyStyleToSelection({ textAlign: align });
+    },
+    [applyStyleToSelection]
+  );
+
+  // 글자 세로 정렬 핸들러 (top / middle / bottom)
+  const setVerticalAlign = useCallback(
+    (vAlign: "top" | "middle" | "bottom") => {
+      applyStyleToSelection({ verticalAlign: vAlign });
     },
     [applyStyleToSelection]
   );
@@ -121,14 +136,7 @@ export default function ToolBar() {
     };
     window.addEventListener("keydown", onHotkey);
     return () => window.removeEventListener("keydown", onHotkey);
-  }, [
-    isBold,
-    isItalic,
-    isUnderline,
-    toggleBold,
-    toggleItalic,
-    toggleUnderline,
-  ]);
+  }, [toggleBold, toggleItalic, toggleUnderline]);
 
   // ====== 테두리(보더) UI 상태 ======
   const [borderColor, setBorderColor] = useState<string>("#222222");
@@ -168,6 +176,7 @@ export default function ToolBar() {
 
   return (
     <div className={styles.toolBarConatiner}>
+      {/* ===== Undo / Redo ===== */}
       <div className={styles.undoIcon} onClick={undo}>
         <img width="10px" src="/images/undo.png" alt="되돌리기" />
       </div>
@@ -177,7 +186,7 @@ export default function ToolBar() {
 
       <div className={styles.vDivider} />
 
-      {/* 글자 크기 */}
+      {/* ===== 글자 크기 ===== */}
       <div className={styles.group}>
         <button className={styles.fontSizeBtn} onClick={stepDown} title="작게">
           –
@@ -195,7 +204,7 @@ export default function ToolBar() {
 
       <div className={styles.vDivider} />
 
-      {/*  텍스트 스타일: B I U */}
+      {/* ===== 텍스트 스타일: B / I / U ===== */}
       <div className={styles.textStyleGroup}>
         <button
           className={`${styles.toggleBtn} ${isBold ? styles.active : ""} ${
@@ -231,7 +240,7 @@ export default function ToolBar() {
 
       <div className={styles.vDivider} />
 
-      {/*  정렬 버튼 그룹 */}
+      {/* ===== 가로 정렬 ===== */}
       <div className={styles.alignGroup}>
         <button
           type="button"
@@ -268,7 +277,44 @@ export default function ToolBar() {
         </button>
       </div>
 
-      {/*  셀 병합 그룹 */}
+      {/* ===== 세로 정렬 (위 / 중간 / 아래) ===== */}
+      <div className={styles.verticalAlignGroup}>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${styles.valignBtn} ${
+            currentVAlign === "top" ? styles.active : ""
+          }`}
+          onClick={() => setVerticalAlign("top")}
+          title="위쪽 정렬"
+          aria-pressed={currentVAlign === "top"}
+        >
+          <img src="/images/valign-top.png" width={17} height={17} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${styles.valignBtn} ${
+            currentVAlign === "middle" ? styles.active : ""
+          }`}
+          onClick={() => setVerticalAlign("middle")}
+          title="가운데 정렬"
+          aria-pressed={currentVAlign === "middle"}
+        >
+          <img src="/images/valign-middle.png" width={19} height={19} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleBtn} ${styles.valignBtn} ${
+            currentVAlign === "bottom" ? styles.active : ""
+          }`}
+          onClick={() => setVerticalAlign("bottom")}
+          title="아래 정렬"
+          aria-pressed={currentVAlign === "bottom"}
+        >
+          <img src="/images/valign-bottom.png" width={13} height={13} />
+        </button>
+      </div>
+
+      {/* ===== 셀 병합 ===== */}
       <div className={styles.vDivider} />
       <div className={styles.mergeGroup}>
         <button
@@ -292,6 +338,7 @@ export default function ToolBar() {
 
       <div className={styles.vDivider} />
 
+      {/* ===== 색상 ===== */}
       <div className={styles.colorControls}>
         {/* 글자색 */}
         <label>
@@ -304,7 +351,7 @@ export default function ToolBar() {
         </label>
         <button onClick={resetTextColor}>Reset</button>
 
-        <div className={styles.vDivider} />
+        <div className={styles.vDividerThin} />
 
         {/* 배경색 */}
         <label>
@@ -363,7 +410,6 @@ export default function ToolBar() {
           </select>
         </label>
 
-        {/* 아이콘 버튼들 */}
         <div className={styles.borderButtons}>
           <button
             type="button"
@@ -413,6 +459,7 @@ export default function ToolBar() {
           </button>
         </div>
       </div>
+
       {/* ===== 자동저장 토글 + 수동 저장 ===== */}
       <div className={styles.vDivider} />
 

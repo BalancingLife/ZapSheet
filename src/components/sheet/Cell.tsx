@@ -70,17 +70,12 @@ function Cell({ row, col }: CellProps) {
 
   const isDisplayNumeric = isNumericValue(displayVal);
 
-  //  최종 정렬 결정: 스타일에 textAlign 있으면 우선, 없으면 숫자는 right / 나머지는 left
-  const computedAlign: "left" | "center" | "right" =
+  // 가로 정렬
+  const hAlign: "left" | "center" | "right" =
     style?.textAlign ?? (isDisplayNumeric ? "right" : "left");
 
-  //  정렬에 따라 CSS 클래스 매핑
-  const alignClass =
-    computedAlign === "right"
-      ? styles.alignBottomRight
-      : computedAlign === "center"
-      ? styles.alignBottomCenter
-      : styles.alignBottomLeft;
+  // ✅ 세로 정렬 (없으면 bottom)
+  const vAlign: "top" | "middle" | "bottom" = style?.verticalAlign ?? "bottom";
 
   const cellRef = useRef<HTMLDivElement>(null);
 
@@ -88,7 +83,6 @@ function Cell({ row, col }: CellProps) {
 
   // ✅ 병합 정보 조회
   const mergeRegion = useSheetStore((s) => s.getMergeRegionAt(row, col));
-  const isMerged = !!mergeRegion;
 
   // ✅ "이 병합 영역이 포커스 상태인가?"
   const focusPos = useSheetStore((s) => s.focus);
@@ -204,11 +198,26 @@ function Cell({ row, col }: CellProps) {
       ref={cellRef}
       tabIndex={0} // tabIndex => 이 요소가 키보드 포커스를 받을 수 있게 만든다
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
-      className={`${styles.cellView} ${alignClass} ${
-        !isMerged && isFocused ? styles.focused : ""
-      } ${isSelected ? "selected" : ""} ${isErr ? styles.error : ""}`}
+      className={`${styles.cellView} ${isFocused ? styles.focused : ""} ${
+        isSelected ? "selected" : ""
+      } ${isErr ? styles.error : ""}`}
       style={{
         ...mergedBorderCss,
+        // ✅ 정렬 관련: flex + textAlign
+        justifyContent:
+          hAlign === "center"
+            ? "center"
+            : hAlign === "right"
+            ? "flex-end"
+            : "flex-start",
+        alignItems:
+          vAlign === "top"
+            ? "flex-start"
+            : vAlign === "middle"
+            ? "center"
+            : "flex-end",
+        textAlign: hAlign,
+
         color: isErr ? "#d93025" : style?.textColor,
         backgroundColor: style?.bgColor,
         fontSize: `${fontSize}px`,

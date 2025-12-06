@@ -69,9 +69,13 @@ export default function MergedCellOverlay({
 
         const isNumeric = isNumericValue(display);
 
-        // 정렬: 스타일에 textAlign 있으면 우선, 없으면 숫자는 right / 나머지는 left
-        const align: "left" | "center" | "right" =
+        // 가로 정렬: 스타일 우선, 없으면 숫자는 right / 나머지는 left
+        const hAlign: "left" | "center" | "right" =
           style?.textAlign ?? (isNumeric ? "right" : "left");
+
+        // ✅ 세로 정렬: 스타일 없으면 bottom 기본
+        const vAlign: "top" | "middle" | "bottom" =
+          style?.verticalAlign ?? "bottom";
 
         const box = rectToBox(
           rect,
@@ -84,11 +88,19 @@ export default function MergedCellOverlay({
         );
 
         const justifyContent =
-          align === "center"
+          hAlign === "center"
             ? "center"
-            : align === "right"
+            : hAlign === "right"
             ? "flex-end"
             : "flex-start";
+
+        // ✅ verticalAlign → flex alignItems 매핑
+        const alignItems =
+          vAlign === "top"
+            ? "flex-start"
+            : vAlign === "middle"
+            ? "center"
+            : "flex-end";
 
         return (
           <div
@@ -102,8 +114,8 @@ export default function MergedCellOverlay({
               // 셀 위에 떠 있는 레이어이지만, 클릭 막으면 안 되니까 none
               pointerEvents: "none",
               display: "flex",
-              alignItems: "flex-end", // 아래 정렬
-              justifyContent,
+              alignItems, //  세로 정렬 반영
+              justifyContent, // 가로 정렬
               boxSizing: "border-box",
               padding: "0 4px 2px 4px",
               overflow: "hidden",

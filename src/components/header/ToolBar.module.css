@@ -414,6 +414,7 @@
   height: 26px;
   padding: 0 10px;
   border: none;
+  flex-direction: row;
   background: transparent;
   border-radius: 6px;
   cursor: pointer;
@@ -440,4 +441,44 @@
 
 .mergeBtn.unmerge:hover:not(:disabled) {
   background: #ffecec;
+}
+
+/* ===== Vertical Align (위/중/아) ===== */
+.verticalAlignGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: #fff;
+  border: 1px solid #d9dde3;
+  border-radius: 8px;
+  margin-left: 4px;
+}
+
+.valignBtn {
+  width: 24px;
+  height: 26px;
+  padding: 0;
+}
+
+/* 좁은 화면에서 전체 툴바를 좀 더 조밀하게 */
+@media (max-width: 900px) {
+  .toolBarConatiner {
+    padding: 6px 8px;
+    gap: 2px;
+    row-gap: 4px;
+  }
+
+  .borderGroup,
+  .autoSaveGroup {
+    flex-wrap: wrap;
+  }
+
+  .borderGroup {
+    row-gap: 4px;
+  }
+
+  .sectionTitle {
+    font-size: 11px;
+  }
 }
