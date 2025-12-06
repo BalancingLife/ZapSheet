@@ -1,3 +1,5 @@
+// src/components/sheet/Cell.tsx
+
 import { toDisplayString, DISPLAY_ERROR } from "@/utils/formula";
 import { memo, useRef, useEffect, useCallback } from "react";
 import styles from "./Cell.module.css";

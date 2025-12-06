@@ -3475,16 +3475,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     pushHistory();
 
-    // 같은 영역(또는 겹치는 영역)을 mergedRegions에서 제거
-    const nextMerged = mergedRegions.filter(
-      (mr) =>
-        !(
-          mr.sr === rect.sr &&
-          mr.sc === rect.sc &&
-          mr.er === rect.er &&
-          mr.ec === rect.ec
-        )
-    );
+    const nextMerged = mergedRegions.filter((mr) => !rectsIntersect(mr, rect));
 
     set({ mergedRegions: nextMerged });
 
