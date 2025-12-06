@@ -1325,12 +1325,23 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     // 2) 한 칸 이동 (시트 경계 클램프 포함)
     const stepPos = step1(base, dir);
 
-    // 3) 도착지가 병합 영역 내부라면 master 좌표로 스냅
+    // 3) 도착지가 병합 영역 내부라면 master 좌표 + 병합 Rect 전체 선택
     const mrDest = getMergeRegionAt(stepPos.row, stepPos.col);
-    const nextPos = mrDest ? { row: mrDest.sr, col: mrDest.sc } : stepPos;
+    if (mrDest) {
+      const master = { row: mrDest.sr, col: mrDest.sc };
 
-    // 4) 최종 포커스 + selection (병합 존중)
-    setFocusAsSingleSelection(set, nextPos);
+      set({
+        focus: master,
+        selection: { ...mrDest },
+        isSelecting: false,
+        anchor: master,
+        head: { row: mrDest.er, col: mrDest.ec },
+      });
+      return;
+    }
+
+    // 4) 일반 셀이면 기존 로직 사용 (1×1 selection)
+    setFocusAsSingleSelection(set, step1(base, dir));
   },
 
   // 해당 방향 끝(엣지)로 점프하는 이동
