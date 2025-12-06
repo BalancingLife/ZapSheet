@@ -397,3 +397,47 @@
   color: #d60000;
   font-weight: 600;
 }
+
+/* ===== Merge (셀 병합) ===== */
+.mergeGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  background: #fff;
+  border: 1px solid #d9dde3;
+  border-radius: 8px;
+  margin-left: 6px;
+}
+
+.mergeBtn {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #2f3237;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mergeBtn:hover {
+  background: #f2f4f6;
+}
+
+/* 병합 비활성화 (선택 1칸 등) */
+.mergeBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+}
+
+/* 병합 해제와 병합을 시각적으로 구분하고 싶으면 */
+.mergeBtn.unmerge {
+  color: #b82f2f;
+}
+
+.mergeBtn.unmerge:hover:not(:disabled) {
+  background: #ffecec;
+}

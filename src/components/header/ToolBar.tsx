@@ -16,6 +16,11 @@ export default function ToolBar() {
   const fontSize = useSheetStore((s) => s.getFontSizeForFocus());
   const setFontSize = useSheetStore((s) => s.setFontSize);
 
+  // 병합 관련 액션
+  const mergeSelection = useSheetStore((s) => s.mergeSelection);
+  const unmergeSelection = useSheetStore((s) => s.unmergeSelection);
+  const selection = useSheetStore((s) => s.selection);
+
   // 자동저장 관련
   const autoSaveEnabled = useSheetStore((s) => s.autoSaveEnabled);
   const setAutoSaveEnabled = useSheetStore((s) => s.setAutoSaveEnabled);
@@ -152,6 +157,15 @@ export default function ToolBar() {
     void saveAll();
   };
 
+  // 병합 가능한지 간단 체크 (1x1 은 병합 버튼 비활성화)
+  const canMerge =
+    selection &&
+    selection.sr !== undefined &&
+    selection.sc !== undefined &&
+    selection.er !== undefined &&
+    selection.ec !== undefined &&
+    (selection.sr !== selection.er || selection.sc !== selection.ec);
+
   return (
     <div className={styles.toolBarConatiner}>
       <div className={styles.undoIcon} onClick={undo}>
@@ -251,6 +265,28 @@ export default function ToolBar() {
           aria-pressed={currentAlign === "right"}
         >
           <img src="/images/align-right.png" width={15} height={15} />
+        </button>
+      </div>
+
+      {/*  셀 병합 그룹 */}
+      <div className={styles.vDivider} />
+      <div className={styles.mergeGroup}>
+        <button
+          type="button"
+          className={styles.mergeBtn}
+          onClick={mergeSelection}
+          disabled={!canMerge}
+          title="셀 병합"
+        >
+          병합
+        </button>
+        <button
+          type="button"
+          className={styles.mergeBtn}
+          onClick={unmergeSelection}
+          title="병합 해제"
+        >
+          병합 해제
         </button>
       </div>
 
