@@ -89,8 +89,6 @@ function Cell({ row, col }: CellProps) {
   // ✅ 병합 정보 조회
   const mergeRegion = useSheetStore((s) => s.getMergeRegionAt(row, col));
   const isMerged = !!mergeRegion;
-  const isMergeMaster =
-    isMerged && mergeRegion!.sr === row && mergeRegion!.sc === col;
 
   // ✅ "이 병합 영역이 포커스 상태인가?"
   const focusPos = useSheetStore((s) => s.focus);
@@ -196,8 +194,9 @@ function Cell({ row, col }: CellProps) {
     }
   }, [endSel, row, col]);
 
-  // ✅ 이 셀이 내용/타이틀을 렌더할지 여부
-  const shouldRenderContent = !mergeRegion || isMergeMaster;
+  // ✅ 병합된 셀 내용은 Overlay에서 렌더하므로,
+  //    셀 컴포넌트에서는 "비병합 셀"일 때만 내용 표시
+  const shouldRenderContent = !mergeRegion;
 
   // formula 편집 중이거나, 편집이 아닌 일반 보기
   return (

@@ -6,6 +6,7 @@ import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 import HeaderMenu from "./HeaderMenu";
 import EditOverlay from "./EditOverlay";
+import MergedCellOverlay from "./MergedCellOverlay";
 
 import { useSheetStore } from "./store/useSheetStore";
 import SheetSkeleton from "./SheetSkeleton";
@@ -264,6 +265,16 @@ export default function Sheet() {
       </div>
       <div className={styles.gridBody}>
         <Grid />
+
+        {/* 병합 셀 값 오버레이 */}
+        <MergedCellOverlay
+          columnWidths={columnWidths}
+          rowHeights={rowHeights}
+          rowHeaderWidth={rowHeaderWidth}
+          colHeaderHeight={colHeaderHeight}
+          scrollX={scrollX}
+          scrollY={scrollY}
+        />
 
         <EditOverlay
           columnWidths={columnWidths}
