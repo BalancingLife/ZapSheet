@@ -92,13 +92,33 @@ function Cell({ row, col }: CellProps) {
   const isMergeMaster =
     isMerged && mergeRegion!.sr === row && mergeRegion!.sc === col;
 
-  // ✅ 병합 영역 내부의 경계선 제거 (안쪽 경계선 숨기기)
+  // ✅ "이 병합 영역이 포커스 상태인가?"
+  const focusPos = useSheetStore((s) => s.focus);
+  const isMergeFocused =
+    !!mergeRegion &&
+    !!focusPos &&
+    focusPos.row === mergeRegion.sr &&
+    focusPos.col === mergeRegion.sc;
+
+  //
   const mergedBorderCss: React.CSSProperties = { ...borderCss };
+
   if (mergeRegion) {
+    // 내부 경계선 제거
     if (row > mergeRegion.sr) mergedBorderCss.borderTop = "none";
     if (row < mergeRegion.er) mergedBorderCss.borderBottom = "none";
     if (col > mergeRegion.sc) mergedBorderCss.borderLeft = "none";
     if (col < mergeRegion.ec) mergedBorderCss.borderRight = "none";
+
+    // 병합 전체에 포커스 보더
+    if (isMergeFocused) {
+      const focusBorder = "2px solid #1a73e8";
+
+      if (row === mergeRegion.sr) mergedBorderCss.borderTop = focusBorder;
+      if (row === mergeRegion.er) mergedBorderCss.borderBottom = focusBorder;
+      if (col === mergeRegion.sc) mergedBorderCss.borderLeft = focusBorder;
+      if (col === mergeRegion.ec) mergedBorderCss.borderRight = focusBorder;
+    }
   }
 
   useEffect(() => {
@@ -179,7 +199,7 @@ function Cell({ row, col }: CellProps) {
       tabIndex={0} // tabIndex => 이 요소가 키보드 포커스를 받을 수 있게 만든다
       role="gridcell" // 시멘틱, 접근성을 위해, 브라우저에게 알려줌
       className={`${styles.cellView} ${alignClass} ${
-        isFocused ? styles.focused : ""
+        !isMerged && isFocused ? styles.focused : ""
       } ${isSelected ? "selected" : ""} ${isErr ? styles.error : ""}`}
       style={{
         ...mergedBorderCss,
