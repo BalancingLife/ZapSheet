@@ -145,7 +145,11 @@ export default function EditOverlay({
           }
         }}
         onBlur={(e) => {
-          // blur → commit
+          const st = useSheetStore.getState();
+
+          // 이미 편집이 끝났거나, cell 편집이 아니면 아무것도 안 함
+          if (!st.editing || st.editingSource !== "cell") return;
+
           commitEdit(e.target.value);
         }}
       />

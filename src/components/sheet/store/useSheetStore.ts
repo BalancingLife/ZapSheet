@@ -1764,29 +1764,45 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // Esc 등으로 편집 취소
   cancelEdit: () => set({ editing: null }),
 
-  commitEdit: async (value) => {
-    const { editing, clearSelection, sheetId, pushHistory, autoSaveEnabled } =
-      get();
+  commitEdit: async (rawValue?: string) => {
+    const {
+      editing,
+      clearSelection,
+      sheetId,
+      pushHistory,
+      autoSaveEnabled,
+      formulaMirror, // ★ 추가: 미러도 가져온다
+    } = get();
 
-    // editing : 편집중인 셀 좌표
-    // 편집 중인 셀 좌표가 없거나, sheetId가 없다면 return
     if (!editing || !sheetId) return;
 
     pushHistory();
 
-    const { row, col } = editing; // 편집중인 셀의 좌표
+    const { row, col } = editing;
 
-    // 로컬 상태 업데이트
-    set((s) => ({
-      data: { ...s.data, [keyOf(row, col)]: value }, // 시트 데이터에 새로운 문자열 넣음
-      editing: null, // 편집모드 종료
-      editingSource: null, // 편집모드 종료
-    }));
-    clearSelection(); // selection 영역 초기화
+    // 1순위: 인자로 들어온 값
+    // 2순위: formulaMirror
+    // (둘 다 없으면 빈 문자열)
+    const value = rawValue ?? formulaMirror ?? "";
+
+    set((s) => {
+      const key = keyOf(row, col);
+      const nextData = { ...s.data };
+
+      // value == "" 이면 삭제하고 싶으면 여기서 delete 처리
+      // 안 그러고 그냥 "" 저장하고 싶으면 아래 두 줄만 써도 됨
+      nextData[key] = value;
+
+      return {
+        data: nextData,
+        editing: null,
+        editingSource: null,
+      };
+    });
+
+    clearSelection();
 
     if (autoSaveEnabled) {
-      // 자동저장 모드일 때만 즉시 DB 반영
-
       await withUserId(async (uid) => {
         const { sheetId } = get();
 
@@ -1795,11 +1811,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           .upsert([{ row, col, value, user_id: uid, sheet_id: sheetId }], {
             onConflict: "sheet_id,row,col,user_id",
           });
+
         if (error) console.error(" Supabase 저장 실패:", error);
         else console.log(`저장됨: (${row}, ${col}) → ${value}`);
       });
     } else {
-      // 수동 모드: 더티 플래그만
       set({ hasUnsavedChanges: true });
     }
   },

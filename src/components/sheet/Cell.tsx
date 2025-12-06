@@ -135,6 +135,13 @@ function Cell({ row, col }: CellProps) {
       if (e.button !== 0) return; // 좌클릭만
 
       const st = useSheetStore.getState();
+
+      if (st.editing && st.editingSource === "cell") {
+        e.preventDefault();
+        st.commitEdit(st.formulaMirror ?? "");
+        return;
+      }
+
       const isFormulaEditing = st.editingSource === "formula";
       const withModKey = e.ctrlKey || e.metaKey;
 
