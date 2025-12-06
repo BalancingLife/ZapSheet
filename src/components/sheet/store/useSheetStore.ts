@@ -1364,24 +1364,40 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // startSelection: (pos, extend = false) : 마우스로 셀을 클릭/드래그 시작할 때, selection 초기화
   // extend = Shift 누른 상태인지 여부
   startSelection: (pos, extend = false) => {
-    const { focus, setFocus, editingSource } = get();
+    const { focus, setFocus, editingSource, getMergeRegionAt } = get();
     const isFormulaEditing = editingSource === "formula";
-
     // base : anchor 후보
-    // 포뮬라 편집 중이면:
-    // anchor = 그냥 pos (지금 찍은 그 셀 기준으로 드래그)
-    // 그 외:
-    // extend === true 이고 focus가 있다 → anchor = focus
-    // 아니면 anchor = pos (일반 클릭/드래그)
     const base = isFormulaEditing ? pos : extend && focus ? focus : pos;
 
+    // ✅ 1) 병합 셀 단순 클릭: 전체 병합 영역을 selection으로
+    //    - Shift(extend) 아니고
+    //    - 포뮬라 편집 모드도 아닐 때만
+    if (!extend && !isFormulaEditing) {
+      const mr = getMergeRegionAt(base.row, base.col);
+      if (mr) {
+        const anchor = { row: mr.sr, col: mr.sc };
+        const head = { row: mr.er, col: mr.ec };
+
+        set({
+          isSelecting: true,
+          anchor,
+          head,
+          selection: mr,
+        });
+        setFocus(anchor);
+        return;
+      }
+    }
+
+    // ✅ 2) 일반 셀 / Shift 드래그 등 기존 로직은 그대로
     set({
       isSelecting: true,
       anchor: base,
       head: pos,
       selection: normRect(base, pos),
     });
-    // 포뮬라 편집 중엔 절대 setFocus 금지 (mirror가 덮여씌워지는 문제 방지)
+
+    // 포뮬라 편집 중엔 절대 focus 옮기지 않기
     if (!extend && !isFormulaEditing) {
       setFocus(base);
     }
