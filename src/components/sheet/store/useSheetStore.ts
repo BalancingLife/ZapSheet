@@ -478,13 +478,13 @@ function prepareAnchorHead(args: {
   return { a, h: { row: focus.row, col: focus.col } };
 }
 
-// updateSelectionFrom(anchor, head) 선택 범위를 (anchor, head)로 확정하고, selection 객체를 업데이트하는 함수
-const updateSelectionFrom = (a: Pos, h: Pos) => ({
-  anchor: a,
-  head: h,
-  selection: normRect(a, h),
-  isSelecting: false,
-});
+// // updateSelectionFrom(anchor, head) 선택 범위를 (anchor, head)로 확정하고, selection 객체를 업데이트하는 함수
+// const updateSelectionFrom = (a: Pos, h: Pos) => ({
+//   anchor: a,
+//   head: h,
+//   selection: normRect(a, h),
+//   isSelecting: false,
+// });
 
 // extendSelectionWith(get(), set(), Dir, strategy)
 // extendSelectionByArrow,extendSelectionByCtrlEdge 와 이어짐

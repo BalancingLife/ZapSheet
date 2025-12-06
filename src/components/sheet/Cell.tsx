@@ -84,7 +84,6 @@ function Cell({ row, col }: CellProps) {
       : styles.alignBottomLeft;
 
   const cellRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const borderCss = useBorderCss(row, col);
 
@@ -110,19 +109,6 @@ function Cell({ row, col }: CellProps) {
       cellRef.current?.focus();
     }
   }, [isFocused, isEditing, editingSource]);
-
-  // 편집 input 포커스 (★ cell 편집일 때만)
-  useEffect(() => {
-    if (isEditing && editingSource === "cell") {
-      requestAnimationFrame(() => {
-        const el = inputRef.current;
-        if (el) {
-          el.focus();
-          el.select();
-        }
-      });
-    }
-  }, [isEditing, editingSource]);
 
   // 편집 커밋
   const commit = (nextVal?: string) => {
@@ -195,53 +181,8 @@ function Cell({ row, col }: CellProps) {
     }
   }, [endSel, row, col]);
 
-  const isCellEditing = isEditing && editingSource === "cell"; // ★
-
   // ✅ 이 셀이 내용/타이틀을 렌더할지 여부
   const shouldRenderContent = !mergeRegion || isMergeMaster;
-
-  if (isCellEditing) {
-    return (
-      <div
-        ref={cellRef}
-        role="gridcell"
-        className={`${styles.container} ${isFocused ? styles.focused : ""}`}
-        tabIndex={-1}
-        onMouseDown={(e) => e.stopPropagation()}
-        onDoubleClick={(e) => e.preventDefault()}
-        style={{ fontSize: `${fontSize}px` }}
-      >
-        <input
-          ref={inputRef}
-          className={styles.editorInput}
-          defaultValue={val}
-          onInput={(e) => {
-            // 셀에서 입력 중일 때 FormulaInput 미러 동기화
-            const next = (e.target as HTMLInputElement).value;
-            useSheetStore.getState().setFormulaInput(next);
-          }}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            const val = (e.target as HTMLInputElement).value;
-
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commit(val);
-              move("down"); // enter 시 한칸 아래로 이동
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancel();
-            } else if (e.key === "Tab") {
-              e.preventDefault();
-              commit(val);
-              move("right");
-            }
-          }}
-          onBlur={(e) => commit(e.currentTarget.value)}
-        />
-      </div>
-    );
-  }
 
   // formula 편집 중이거나, 편집이 아닌 일반 보기
   return (
@@ -264,12 +205,16 @@ function Cell({ row, col }: CellProps) {
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}
-      // ✅ 병합된 내부 셀은 더블클릭 편집 막기 (항상 master에서만 편집)
-      onDoubleClick={
-        mergeRegion && !isMergeMaster
-          ? undefined
-          : () => startEdit({ row, col })
-      }
+      // ✅ 병합 내부 아무 칸 더블클릭해도 항상 좌상단(master) 기준으로 편집 시작.
+      onDoubleClick={() => {
+        const st = useSheetStore.getState();
+        const mr = st.getMergeRegionAt(row, col);
+
+        const baseRow = mr ? mr.sr : row;
+        const baseCol = mr ? mr.sc : col;
+
+        startEdit({ row: baseRow, col: baseCol });
+      }}
       title={shouldRenderContent ? val ?? "" : ""}
     >
       {shouldRenderContent &&

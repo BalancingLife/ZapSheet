@@ -33,7 +33,10 @@ export default function Grid() {
           gridTemplateRows: rowTemplate,
         }}
       >
+        {/* 셀 렌더 */}
         {cells}
+
+        {/* 선택 영역 사각형 */}
         <SelectionOverlay
           columnWidths={columnWidths}
           rowHeights={rowHeights}

@@ -1,0 +1,13 @@
+.editorInput {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+
+  border: 2px solid rgb(26, 115, 232);
+  padding: 2px 4px;
+  outline: none;
+  background: #fff;
+
+  /* 폰트 세부 값(크기, bold, italic 등)은 JS에서 동적으로 넣는다 */
+}

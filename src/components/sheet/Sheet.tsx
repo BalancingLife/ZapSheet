@@ -5,6 +5,7 @@ import ColHeader from "./ColHeader";
 import RowHeader from "./RowHeader";
 import Grid from "./Grid";
 import HeaderMenu from "./HeaderMenu";
+import EditOverlay from "./EditOverlay";
 
 import { useSheetStore } from "./store/useSheetStore";
 import SheetSkeleton from "./SheetSkeleton";
@@ -42,6 +43,12 @@ export default function Sheet() {
   const redo = useSheetStore((s) => s.redo);
 
   const selectAll = useSheetStore((s) => s.selectAll);
+
+  const columnWidths = useSheetStore((s) => s.columnWidths);
+  const rowHeights = useSheetStore((s) => s.rowHeights);
+  // 스크롤 상태 아직 없으면 일단 0으로 두고 시작
+  const scrollX = 0;
+  const scrollY = 0;
 
   useEffect(() => {
     const init = async () => {
@@ -257,6 +264,15 @@ export default function Sheet() {
       </div>
       <div className={styles.gridBody}>
         <Grid />
+
+        <EditOverlay
+          columnWidths={columnWidths}
+          rowHeights={rowHeights}
+          rowHeaderWidth={rowHeaderWidth}
+          colHeaderHeight={colHeaderHeight}
+          scrollX={scrollX}
+          scrollY={scrollY}
+        />
       </div>
 
       {/* row or column 헤더 우클릭 메뉴 */}
