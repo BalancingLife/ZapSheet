@@ -1303,7 +1303,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // move(dir) : ↑↓←→ 키로 한 칸씩 포커스를 옮길 때 쓰는 함수
   move: (dir) => {
-    const { focus, getMergeRegionAt } = get();
+    const { focus, getMergeRegionAt, syncMirrorToFocus, editingSource } = get();
     if (!focus) return;
 
     let base = focus;
@@ -1337,6 +1337,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         anchor: master,
         head: { row: mrDest.er, col: mrDest.ec },
       });
+
+      if (editingSource !== "formula") {
+        syncMirrorToFocus();
+      }
+
       return;
     }
 
