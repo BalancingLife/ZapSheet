@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import styles from "./ToolBar.module.css";
-import { useSheetStore } from "../sheet/store/useSheetStore";
+import {
+  useSheetStore,
+  rectsIntersect,
+  normRect,
+} from "../sheet/store/useSheetStore";
 
 export default function ToolBar() {
   const applyStyleToSelection = useSheetStore((s) => s.applyStyleToSelection);
@@ -17,6 +21,7 @@ export default function ToolBar() {
   const setFontSize = useSheetStore((s) => s.setFontSize);
 
   // 병합 관련 액션
+  const mergedRegions = useSheetStore((s) => s.mergedRegions);
   const mergeSelection = useSheetStore((s) => s.mergeSelection);
   const unmergeSelection = useSheetStore((s) => s.unmergeSelection);
   const selection = useSheetStore((s) => s.selection);
@@ -165,14 +170,29 @@ export default function ToolBar() {
     void saveAll();
   };
 
-  // 병합 가능한지 간단 체크 (1x1 은 병합 버튼 비활성화)
-  const canMerge =
+  const rect =
     selection &&
-    selection.sr !== undefined &&
-    selection.sc !== undefined &&
-    selection.er !== undefined &&
-    selection.ec !== undefined &&
-    (selection.sr !== selection.er || selection.sc !== selection.ec);
+    normRect(
+      { row: selection.sr, col: selection.sc },
+      { row: selection.er, col: selection.ec }
+    );
+
+  const hasOverlap =
+    rect && mergedRegions.some((mr) => rectsIntersect(mr, rect));
+
+  const handleMergeToggle = useCallback(() => {
+    if (!selection) return;
+
+    // selection 도 normRect 로 정규화해서 쓰자 (스토어에서 쓰는 거랑 통일)
+
+    if (hasOverlap) {
+      // 하나라도 걸치면 → 해제
+      void unmergeSelection();
+    } else {
+      // 전혀 안 겹치면 → 새로 병합
+      void mergeSelection();
+    }
+  }, [selection, mergeSelection, unmergeSelection, hasOverlap]);
 
   return (
     <div className={styles.toolBarConatiner}>
@@ -316,23 +336,15 @@ export default function ToolBar() {
 
       {/* ===== 셀 병합 ===== */}
       <div className={styles.vDivider} />
+
       <div className={styles.mergeGroup}>
         <button
-          type="button"
-          className={styles.mergeBtn}
-          onClick={mergeSelection}
-          disabled={!canMerge}
-          title="셀 병합"
+          onClick={handleMergeToggle}
+          className={`${styles.mergeToggleBtn} ${
+            hasOverlap ? styles.active : ""
+          }`}
         >
-          병합
-        </button>
-        <button
-          type="button"
-          className={styles.mergeBtn}
-          onClick={unmergeSelection}
-          title="병합 해제"
-        >
-          병합 해제
+          <img src="/images/merge.png" width={13} height={13} />
         </button>
       </div>
 

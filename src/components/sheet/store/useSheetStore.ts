@@ -377,7 +377,7 @@ const clampCol = (c: number) => clamp(c, 0, COLUMN_COUNT - 1);
 // 이걸 그대로 쓰면 selection 계산이 꼬인다.
 // 그래서 무조건 “좌상단 → 우하단” 순서로 정규화(normalize) 해야 한다.
 // 그걸 담당하는 것이 normRect
-function normRect(a: Pos, b: Pos): Rect {
+export function normRect(a: Pos, b: Pos): Rect {
   const sr = Math.min(a.row, b.row); // → 두 좌표 중 더 위쪽 행을 sr(start row)로 지정
   const er = Math.max(a.row, b.row); // → 두 좌표 중 더 아래쪽 행을 er(end row)로 지정
   const sc = Math.min(a.col, b.col); // 열도 동일
@@ -1086,7 +1086,7 @@ function evalCellByKey(
 }
 
 // 두 Rect가 한 칸이라도 겹치는지 여부
-function rectsIntersect(a: Rect, b: Rect): boolean {
+export function rectsIntersect(a: Rect, b: Rect): boolean {
   return !(a.er < b.sr || a.sr > b.er || a.ec < b.sc || a.sc > b.ec);
 }
 
@@ -3627,7 +3627,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       { row: selection.er, col: selection.ec }
     );
 
-    if (rect.sr === rect.er && rect.sc === rect.sc) return;
+    if (rect.sr === rect.er && rect.sc === rect.ec) return;
 
     pushHistory();
 
