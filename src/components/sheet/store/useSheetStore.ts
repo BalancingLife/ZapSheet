@@ -167,26 +167,20 @@ type ClipboardSlice = {
   pasteGridFromSelection: (grid: string[][]) => void;
 };
 
+type HistorySnapshot = {
+  data: Record<string, string>;
+  stylesByCell: Record<string, CellStyle>;
+  selection: Rect | null;
+  focus: Pos | null;
+  mergedRegions: Rect[];
+};
+
 type HistorySlice = {
-  historyLimit: number; // 최대 Undo 기록 개수
-  /** 과거 스냅샷 스택 */
-  historyPast: Array<{
-    data: Record<string, string>;
-    stylesByCell: Record<string, CellStyle>;
-    selection: Rect | null;
-    focus: Pos | null;
-  }>;
+  historyLimit: number;
+  historyPast: HistorySnapshot[];
+  historyFuture: HistorySnapshot[];
 
-  historyFuture: Array<{
-    data: Record<string, string>;
-    stylesByCell: Record<string, CellStyle>;
-    selection: Rect | null;
-    focus: Pos | null;
-  }>;
-
-  /** 현재 상태(data/selection)를 스냅샷으로 저장 */
   pushHistory: () => void;
-
   undo: () => void | Promise<void>;
   redo: () => void | Promise<void>;
 };
@@ -826,14 +820,82 @@ async function persistStyleDiff(
   });
 }
 
+// 병합 영역 상태의 diff를 계산해 DB에 배치 업서트/삭제하는 함수
+async function persistMergeDiff(oldRegs: Rect[], newRegs: Rect[]) {
+  // Rect -> 고유 키
+  const keyOfRect = (r: Rect) => `${r.sr}:${r.sc}:${r.er}:${r.ec}`;
+
+  const oldMap = new Map<string, Rect>();
+  const newMap = new Map<string, Rect>();
+
+  for (const r of oldRegs) oldMap.set(keyOfRect(r), r);
+  for (const r of newRegs) newMap.set(keyOfRect(r), r);
+
+  const toUpsert: Rect[] = [];
+  const toDelete: Rect[] = [];
+
+  // 삭제/변경 감지: old에는 있는데 new에는 없는 것 → 삭제
+  for (const [k, r] of oldMap.entries()) {
+    if (!newMap.has(k)) {
+      toDelete.push(r);
+    }
+  }
+
+  // 추가/변경 감지: new에는 있는데 old와 다른 것 → upsert
+  for (const [k, r] of newMap.entries()) {
+    if (!oldMap.has(k)) {
+      toUpsert.push(r);
+    }
+  }
+
+  if (toUpsert.length === 0 && toDelete.length === 0) return;
+
+  await withUserId(async (uid) => {
+    const { sheetId } = useSheetStore.getState();
+    if (!sheetId) return;
+
+    if (toUpsert.length > 0) {
+      const payload = toUpsert.map((r) => ({
+        user_id: uid,
+        sheet_id: sheetId,
+        sr: r.sr,
+        sc: r.sc,
+        er: r.er,
+        ec: r.ec,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase
+        .from("cell_merges")
+        .upsert(payload, { onConflict: "user_id,sheet_id,sr,sc,er,ec" });
+
+      if (error) console.error("undo/redo merge upsert 실패:", error);
+    }
+
+    if (toDelete.length > 0) {
+      const orClauses = toDelete.map(
+        (r) => `and(sr.eq.${r.sr},sc.eq.${r.sc},er.eq.${r.er},ec.eq.${r.ec})`
+      );
+      const { error } = await supabase
+        .from("cell_merges")
+        .delete()
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId)
+        .or(orClauses.join(","));
+      if (error) console.error("undo/redo merge delete 실패:", error);
+    }
+  });
+}
+
 // 현재 시트 상태(SheetState)의 주요 부분을 “복사본(snapshot)”으로 만들어 저장.
 // undo,redo를 하기 위해 스냅샷을 만들어 놓는 용도
-function makeSnapshot(s: SheetState) {
+function makeSnapshot(s: SheetState): HistorySnapshot {
   return {
     data: { ...s.data },
     stylesByCell: { ...s.stylesByCell },
     selection: s.selection ? { ...s.selection } : null,
     focus: s.focus ? { ...s.focus } : null,
+    mergedRegions: s.mergedRegions.map((r) => ({ ...r })),
   };
 }
 
@@ -1999,41 +2061,37 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       historyFuture,
       data,
       stylesByCell,
+      mergedRegions,
       syncMirrorToFocus,
       autoSaveEnabled,
     } = get();
     if (historyPast.length === 0) return;
 
-    // 되돌리기 전 상태 저장
     const prevData = data;
     const prevStyles = stylesByCell;
+    const prevMerges = mergedRegions;
 
-    // 되돌릴 스냅샷 가져오기
-    const last = historyPast[historyPast.length - 1]; // 복원할 스냅샷
-
-    // redo도 생각해서 지금 상태 스냅샷
+    const last = historyPast[historyPast.length - 1];
     const nowSnap = makeSnapshot(get());
 
     set({
       data: last.data,
       stylesByCell: last.stylesByCell,
+      mergedRegions: last.mergedRegions.map((r) => ({ ...r })),
       selection: last.selection,
       focus: last.focus ?? null,
       isSelecting: false,
       anchor: null,
       head: null,
       editing: null,
-
-      //마지막 스냅샷(지금 되돌아온 그 스냅샷)을 제거
       historyPast: historyPast.slice(0, historyPast.length - 1),
-
-      // historyFuture에 현재(nowSnap) 넣기
       historyFuture: [...historyFuture, nowSnap],
     });
 
     if (autoSaveEnabled) {
       await persistDataDiff(prevData, last.data);
       await persistStyleDiff(prevStyles, last.stylesByCell);
+      await persistMergeDiff(prevMerges, last.mergedRegions);
     } else {
       set({ hasUnsavedChanges: true });
     }
@@ -2047,19 +2105,23 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       historyFuture,
       data,
       stylesByCell,
+      mergedRegions,
       syncMirrorToFocus,
       autoSaveEnabled,
     } = get();
     if (historyFuture.length === 0) return;
 
-    const prevData = data; // DB diff용
+    const prevData = data;
     const prevStyles = stylesByCell;
-    const next = historyFuture[historyFuture.length - 1]; // 적용할 스냅샷
-    const nowSnap = makeSnapshot(get()); // 현재 상태는 past에 쌓기
+    const prevMerges = mergedRegions;
+
+    const next = historyFuture[historyFuture.length - 1];
+    const nowSnap = makeSnapshot(get());
 
     set({
       data: next.data,
       stylesByCell: next.stylesByCell,
+      mergedRegions: next.mergedRegions.map((r) => ({ ...r })),
       selection: next.selection,
       focus: next.focus ?? null,
       isSelecting: false,
@@ -2073,6 +2135,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (autoSaveEnabled) {
       await persistDataDiff(prevData, next.data);
       await persistStyleDiff(prevStyles, next.stylesByCell);
+      await persistMergeDiff(prevMerges, next.mergedRegions);
     } else {
       set({ hasUnsavedChanges: true });
     }
