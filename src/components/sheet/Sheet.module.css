@@ -1,9 +1,9 @@
 .container {
   display: grid;
   position: relative;
-  /* grid-template: <rows> 2행 1:1 / <columns> 2열 1:1; */
-  /* 나중 `${CELL_WIDTH}px 1fr`  로 바꿔야함 */
-  grid-template: repeat(2, 1fr) / repeat(2, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-columns: auto 1fr;
+
   background-color: #ffffff;
   overflow: auto;
   /* user-select 브라우저에서 텍스트/요소가 드래그로 선택될 수 있는지를 결정하는 CSS 속성. */

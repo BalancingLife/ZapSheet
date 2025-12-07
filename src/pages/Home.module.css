@@ -1,5 +1,12 @@
+/* Home.module.css */
 .container {
-  display: grid;
-  grid-template-rows: 20% 76% 4%;
-  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Sheet가 들어가는 영역에 className을 따로 주면 더 좋음 */
+.main {
+  flex: 1 1 auto;
+  min-height: 0; /* 스크롤 가능하게 */
 }
