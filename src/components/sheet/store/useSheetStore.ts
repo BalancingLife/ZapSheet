@@ -256,6 +256,7 @@ type SaveSlice = {
   hasUnsavedChanges: boolean; // 수동 모드 일 때, 저장 안 된 변경이 있는 지
   lastSavedData: Record<string, string>;
   lastSavedStyles: Record<string, CellStyle>;
+  lastSavedMergedRegions: Rect[];
 
   saveAll: () => Promise<void>;
   loadUserSettings: () => Promise<void>;
@@ -294,11 +295,17 @@ type MergeSlice = {
   /** 병합된 영역들의 리스트 (좌상단 기준 Rect) */
   mergedRegions: Rect[];
 
+  /** DB에서 해당 sheetId의 병합 영역 전체를 불러오기 */
+  loadMergeRegions: (sheetId: string) => Promise<void>;
+
+  /** 현재 mergedRegions를 통째로 DB에 저장 */
+  saveMergeRegions: (sheetId: string) => Promise<void>;
+
   /** 현재 selection을 하나의 병합 셀로 만들기 */
-  mergeSelection: () => Promise<void> | void;
+  mergeSelection: () => Promise<void>;
 
   /** 현재 selection에 걸쳐 있는 병합 해제 */
-  unmergeSelection: () => void;
+  unmergeSelection: () => Promise<void>;
 
   /** (row,col)이 어떤 병합 영역 안에 있는지 조회 */
   getMergeRegionAt: (row: number, col: number) => Rect | null;
@@ -866,7 +873,7 @@ async function persistMergeDiff(oldRegs: Rect[], newRegs: Rect[]) {
       }));
 
       const { error } = await supabase
-        .from("cell_merges")
+        .from("sheet_merges")
         .upsert(payload, { onConflict: "user_id,sheet_id,sr,sc,er,ec" });
 
       if (error) console.error("undo/redo merge upsert 실패:", error);
@@ -877,7 +884,7 @@ async function persistMergeDiff(oldRegs: Rect[], newRegs: Rect[]) {
         (r) => `and(sr.eq.${r.sr},sc.eq.${r.sc},er.eq.${r.er},ec.eq.${r.ec})`
       );
       const { error } = await supabase
-        .from("cell_merges")
+        .from("sheet_merges")
         .delete()
         .eq("user_id", uid)
         .eq("sheet_id", sheetId)
@@ -1919,24 +1926,57 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         return;
       }
 
-      //  빈 배열일 때 굳이 {}로 덮어쓰고 깜빡임 유발할 필요가 없으면 early return
+      // 병합 정보도 같이 로드
+      const { data: merges, error: mergeError } = await supabase
+        .from("sheet_merges")
+        .select("sr,sc,er,ec")
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId);
+
+      if (mergeError) {
+        console.error("sheet_merges 로드 실패:", mergeError);
+      }
+
       if (!data || data.length === 0) {
-        // 로딩은 했지만 비어있는 시트 → "저장된 스냅샷도 비어있다"라고 맞춰줌
         set({
           data: {},
+          mergedRegions: (merges ?? []).map((m) => ({
+            sr: m.sr,
+            sc: m.sc,
+            er: m.er,
+            ec: m.ec,
+          })),
           lastSavedData: {},
+          lastSavedStyles: {},
+          lastSavedMergedRegions: (merges ?? []).map((m) => ({
+            sr: m.sr,
+            sc: m.sc,
+            er: m.er,
+            ec: m.ec,
+          })),
           hasUnsavedChanges: false,
         });
         return;
       }
 
-      // Supabase의 각 행(row,col,value) 을  key: `${row}:${col}` 형태로 변환
       const next: Record<string, string> = {};
       for (const cell of data ?? [])
         next[`${cell.row}:${cell.col}`] = cell.value ?? "";
 
-      // Zustand 상태에 반영
-      set({ data: next, lastSavedData: next, hasUnsavedChanges: false });
+      const merged: Rect[] = (merges ?? []).map((m) => ({
+        sr: m.sr,
+        sc: m.sc,
+        er: m.er,
+        ec: m.ec,
+      }));
+
+      set({
+        data: next,
+        mergedRegions: merged,
+        lastSavedData: next,
+        lastSavedMergedRegions: merged,
+        hasUnsavedChanges: false,
+      });
     });
   },
 
@@ -2887,25 +2927,29 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   hasUnsavedChanges: false,
   lastSavedData: {},
   lastSavedStyles: {},
+  lastSavedMergedRegions: [],
 
   // 전체 저장 함수
   saveAll: async () => {
-    const { lastSavedData, lastSavedStyles, data, stylesByCell, saveLayout } =
-      get();
+    const {
+      lastSavedData,
+      lastSavedStyles,
+      lastSavedMergedRegions,
+      data,
+      stylesByCell,
+      mergedRegions,
+      saveLayout,
+    } = get();
 
-    // 1) 셀 값 diff 저장
     await persistDataDiff(lastSavedData, data);
-
-    // 2) 스타일 diff 저장
     await persistStyleDiff(lastSavedStyles, stylesByCell);
-
-    // 3) 레이아웃 저장 (sheet_layouts 전체 upsert)
+    await persistMergeDiff(lastSavedMergedRegions, mergedRegions);
     await saveLayout();
 
-    // 4) "방금 상태"를 새 스냅샷으로 기록 + 더티 플래그 초기화
     set({
       lastSavedData: { ...data },
       lastSavedStyles: { ...stylesByCell },
+      lastSavedMergedRegions: mergedRegions.map((r) => ({ ...r })),
       hasUnsavedChanges: false,
     });
   },
@@ -3504,6 +3548,67 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // ==== MergeSlice ====
   mergedRegions: [],
 
+  loadMergeRegions: async (sheetId) => {
+    await withUserId(async (uid) => {
+      const { data, error } = await supabase
+        .from("sheet_merges")
+        .select("sr, sc, er, ec")
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId);
+
+      if (error) {
+        console.error("병합 영역 불러오기 실패:", error);
+        return;
+      }
+
+      const rects = (data ?? []).map((r) => ({
+        sr: r.sr,
+        sc: r.sc,
+        er: r.er,
+        ec: r.ec,
+      }));
+
+      set({ mergedRegions: rects });
+    });
+  },
+
+  saveMergeRegions: async (sheetId) => {
+    await withUserId(async (uid) => {
+      const rects = get().mergedRegions;
+
+      // 먼저 전체 삭제
+      const { error: delErr } = await supabase
+        .from("sheet_merges")
+        .delete()
+        .eq("user_id", uid)
+        .eq("sheet_id", sheetId);
+
+      if (delErr) {
+        console.error("병합 삭제 실패:", delErr);
+        return;
+      }
+
+      if (rects.length === 0) return;
+
+      const payload = rects.map((r) => ({
+        user_id: uid,
+        sheet_id: sheetId,
+        sr: r.sr,
+        sc: r.sc,
+        er: r.er,
+        ec: r.ec,
+      }));
+
+      const { error: insertErr } = await supabase
+        .from("sheet_merges")
+        .insert(payload);
+
+      if (insertErr) {
+        console.error("병합 저장 실패:", insertErr);
+      }
+    });
+  },
+
   mergeSelection: async () => {
     const {
       selection,
@@ -3512,18 +3617,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       mergedRegions,
       autoSaveEnabled,
       pushHistory,
+      sheetId,
     } = get();
 
     if (!selection) return;
 
-    // selection 정규화
     const rect: Rect = normRect(
       { row: selection.sr, col: selection.sc },
       { row: selection.er, col: selection.ec }
     );
 
-    // 1칸이면 병합 의미 없음
-    if (rect.sr === rect.er && rect.sc === rect.ec) return;
+    if (rect.sr === rect.er && rect.sc === rect.sc) return;
 
     pushHistory();
 
@@ -3533,19 +3637,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const nextData: Record<string, string> = { ...prevData };
     const nextStyles: Record<string, CellStyle> = { ...prevStyles };
 
-    // 기준 셀 = 좌상단
     const masterKey = keyOf(rect.sr, rect.sc);
     const masterValue = prevData[masterKey] ?? "";
     const masterStyle = prevStyles[masterKey];
 
-    // 값/스타일 정리:
-    // - 좌상단 셀만 값/스타일 유지
-    // - 나머지 셀은 지움
     for (let r = rect.sr; r <= rect.er; r++) {
       for (let c = rect.sc; c <= rect.ec; c++) {
         const k = keyOf(r, c);
         if (r === rect.sr && c === rect.sc) {
-          // 기준 셀
           nextData[k] = masterValue;
           if (masterStyle) nextStyles[k] = masterStyle;
         } else {
@@ -3555,7 +3654,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       }
     }
 
-    // 겹치는 기존 병합 영역 제거 후, 새 병합 영역 추가
     const nextMerged = mergedRegions
       .filter((mr) => !rectsIntersect(mr, rect))
       .concat(rect);
@@ -3571,13 +3669,17 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       head: { row: rect.er, col: rect.ec },
     });
 
-    if (!autoSaveEnabled) {
+    // 🔥 여기만 추가
+    if (autoSaveEnabled) {
+      await get().saveMergeRegions(sheetId);
+    } else {
       set({ hasUnsavedChanges: true });
     }
   },
 
-  unmergeSelection: () => {
-    const { selection, mergedRegions, pushHistory } = get();
+  unmergeSelection: async () => {
+    const { selection, mergedRegions, pushHistory, autoSaveEnabled, sheetId } =
+      get();
     if (!selection) return;
 
     const rect: Rect = normRect(
@@ -3591,8 +3693,14 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     set({ mergedRegions: nextMerged });
 
-    // 병합 해제 후에는 좌상단 한 칸만 단일 선택 + 포커스
     setFocusAsSingleSelection(set, { row: rect.sr, col: rect.sc });
+
+    // 🔥 이거 한 줄만 추가
+    if (autoSaveEnabled) {
+      await get().saveMergeRegions(sheetId);
+    } else {
+      set({ hasUnsavedChanges: true });
+    }
   },
 
   getMergeRegionAt: (row, col) => {
