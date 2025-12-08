@@ -1832,7 +1832,16 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   // Esc 등으로 편집 취소
-  cancelEdit: () => set({ editing: null }),
+  cancelEdit: () =>
+    set((s) =>
+      s.editing || s.editingSource
+        ? {
+            editing: null,
+            editingSource: null,
+            formulaCaret: undefined,
+          }
+        : {}
+    ),
 
   commitEdit: async (rawValue?: string) => {
     const {
@@ -1995,8 +2004,23 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       draft[keyOf(row, col)] = "";
     }
 
-    set({ data: draft });
+    // ✅ 포커스 셀이 지워진 영역 안에 있으면 formulaInput도 같이 클리어
+    set((s) => {
+      const focus = s.focus;
+      const isFocusCleared =
+        focus &&
+        targets.some((t) => t.row === focus.row && t.col === focus.col);
 
+      if (isFocusCleared) {
+        return {
+          data: draft,
+          formulaMirror: "",
+          formulaCaret: 0, // 캐럿도 맨 앞으로
+        };
+      }
+
+      return { data: draft };
+    });
     if (autoSaveEnabled) {
       await withUserId(async (uid) => {
         const { sheetId } = get();
@@ -2228,30 +2252,37 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     let caret = s.formulaCaret ?? 0;
     caret = Math.max(0, Math.min(src.length, caret));
 
+    // ✅ 1) 포뮬라바에서 편집 중이 아니면 그냥 리턴
+    if (s.editingSource !== "formula") {
+      return;
+    }
+
+    // ✅ 2) 실제 수식이 아닐 때(맨 앞에 '=' 없음)도 리턴
+    const trimmed = src.trimStart();
+    if (!trimmed.startsWith("=")) {
+      return;
+    }
+
     // 스마트 콤마: "..., " 보정
     let ins = ref;
     if (opts?.commaSmart) {
       const left = src.slice(0, caret);
       const right = src.slice(caret);
 
-      // 왼쪽 끝 문자를 보고 콤마 필요 여부 판단
-      const leftCh = left.trimEnd().slice(-1); // '(' or ',' or other
+      const leftCh = left.trimEnd().slice(-1);
       const needCommaLeft = left.length > 0 && leftCh !== "(" && leftCh !== ",";
 
-      // 오른쪽 시작이 ')'가 아니고, 오른쪽이 비어있지 않으며 앞에 콤마가 없다면 뒤쪽에도 콤마 필요할 수 있음
       const rightCh = right.trimStart()[0];
       const needCommaRight =
         right.length > 0 && rightCh && rightCh !== ")" && rightCh !== ",";
 
       if (needCommaLeft) ins = "," + ins;
-      // 뒤쪽에 바로 다른 인자가 있다면 ",ref," 형태로 정돈
       if (needCommaRight) ins = ins + ",";
     }
 
     const next = src.slice(0, caret) + ins + src.slice(caret);
     const nextCaret = caret + ins.length;
 
-    // 미러와 caret 동기
     set((st) =>
       st.formulaMirror === next && st.formulaCaret === nextCaret
         ? {}

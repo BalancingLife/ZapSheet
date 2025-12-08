@@ -124,7 +124,7 @@ function Cell({ row, col }: CellProps) {
   //  Shift면 포커스 금지 + 브라우저 포커스 이동 차단
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return; // 좌클릭만
+      if (e.button !== 0) return;
 
       const st = useSheetStore.getState();
 
@@ -135,30 +135,36 @@ function Cell({ row, col }: CellProps) {
       }
 
       const isFormulaEditing = st.editingSource === "formula";
+      const mirror = st.formulaMirror ?? "";
+      const isFormulaInsertMode =
+        isFormulaEditing && mirror.trimStart().startsWith("=");
+
+      // ✅ FormulaInput 편집 중인데 "=..." 수식이 아닐 때:
+      // 다른 셀 클릭하면 기존 편집 확정 후, 그냥 일반 클릭처럼 동작
+      if (isFormulaEditing && !isFormulaInsertMode) {
+        st.commitEdit(mirror);
+      }
+
       const withModKey = e.ctrlKey || e.metaKey;
 
-      // ⌘/Ctrl + 클릭: 단일 셀 참조 삽입
-      if (isFormulaEditing && withModKey) {
+      // "=..." 수식 + Ctrl/⌘ 클릭 → ref 삽입
+      if (isFormulaInsertMode && withModKey) {
         e.preventDefault();
-        // 단일 셀 참조 "A1" 삽입
         const a1 = `${colToLabel(col)}${row + 1}`;
         st.insertRefAtCaret(a1, { commaSmart: true });
-        // 포커스 이동/selection 방지
         return;
       }
 
       const extend = e.shiftKey === true;
-
-      //  병합 영역 안에서 클릭 시, 항상 master 셀 기준으로 selection/focus
       const baseRow = mergeRegion ? mergeRegion.sr : row;
       const baseCol = mergeRegion ? mergeRegion.sc : col;
 
-      // 텍스트 선택/포커스 이동 방지 (특히 Shift-클릭에서 DOM 포커스 튀는 것 막기)
       e.preventDefault();
       startSel({ row: baseRow, col: baseCol }, extend);
-      //  포뮬라 편집 중엔 setFocus 금지 (mirror가 덮어씌워지는 문제 방지)
-      if (!extend && !isFormulaEditing)
+
+      if (!extend && !isFormulaInsertMode) {
         setFocus({ row: baseRow, col: baseCol });
+      }
     },
     [row, col, startSel, setFocus, mergeRegion]
   );
@@ -176,10 +182,16 @@ function Cell({ row, col }: CellProps) {
 
     const st = useSheetStore.getState();
     if (st.editing?.row === row && st.editing?.col === col) {
-      // 셀 편집 중이면 무시 (셀 인라인 입력과 충돌 방지)
+      // 셀 편집 중이면 무시
       return;
     }
-    if (st.editingSource === "formula") {
+
+    const mirror = st.formulaMirror ?? "";
+    const isFormulaInsertMode =
+      st.editingSource === "formula" && mirror.trimStart().startsWith("=");
+
+    // ✅ "= ..." 수식일 때만 드래그 영역을 ref로 삽입
+    if (isFormulaInsertMode) {
       const sel = st.selection;
       if (sel && sel.sr != null) {
         const a1 = rectToA1(sel); // "A1" | "A1:B5"
