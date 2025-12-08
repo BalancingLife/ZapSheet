@@ -2263,7 +2263,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       return;
     }
 
-    // 스마트 콤마: "..., " 보정
     let ins = ref;
     if (opts?.commaSmart) {
       const left = src.slice(0, caret);
