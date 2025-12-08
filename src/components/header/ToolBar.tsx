@@ -389,12 +389,13 @@ export default function ToolBar() {
             value={borderColor}
             onChange={(e) => setBorderColor(e.target.value)}
             title="테두리 색상"
-            style={{ width: "30px" }}
+            style={{ width: "30px", height: "25px" }}
           />
         </label>
 
         <label className={styles.borderField}>
-          <span>두께</span>
+          <span className={styles.sectionTitle}>두께</span>
+
           <input
             className={styles.borderWidthInput}
             type="number"
@@ -407,7 +408,6 @@ export default function ToolBar() {
         </label>
 
         <label className={styles.borderField}>
-          <span>스타일</span>
           <select
             className={styles.borderStyleSelect}
             value={borderStyle}
