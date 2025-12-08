@@ -1,12 +1,6 @@
 /* Home.module.css */
 .container {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-/* Sheet가 들어가는 영역에 className을 따로 주면 더 좋음 */
-.main {
-  flex: 1 1 auto;
-  min-height: 0; /* 스크롤 가능하게 */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
 }

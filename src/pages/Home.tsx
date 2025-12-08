@@ -7,11 +7,9 @@ import SheetBoot from "@/components/sheet/SheetBoot";
 export default function Home() {
   return (
     <div className={styles.container}>
-      <SheetBoot /> {/* 이건 오버레이로 빼는 게 더 좋고 */}
+      <SheetBoot />
       <Header />
-      <div className={styles.main}>
-        <Sheet />
-      </div>
+      <Sheet />
       <Footer />
     </div>
   );
