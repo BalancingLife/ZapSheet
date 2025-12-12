@@ -2682,9 +2682,28 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
       : null;
 
-    const touchUpsert: Array<{ row: number; col: number; style: CellStyle }> =
-      [];
-    const touchDelete: Array<{ row: number; col: number }> = [];
+    if (!box) return;
+
+    // ✅ dedupe: 같은 (row,col) 여러 번 upsert/delete 되는 거 방지
+    const upsertMap = new Map<
+      string,
+      { row: number; col: number; style: CellStyle }
+    >();
+    const deleteMap = new Map<string, { row: number; col: number }>();
+
+    const dkey = (row: number, col: number) => `${row},${col}`;
+
+    const markUpsert = (row: number, col: number, style: CellStyle) => {
+      const k = dkey(row, col);
+      upsertMap.set(k, { row, col, style });
+      deleteMap.delete(k); // delete로 찍혔던 거 취소
+    };
+
+    const markDelete = (row: number, col: number) => {
+      const k = dkey(row, col);
+      deleteMap.set(k, { row, col });
+      upsertMap.delete(k); // upsert로 찍혔던 거 취소
+    };
 
     const clearEdge = (row: number, col: number, edge: keyof CellBorder) => {
       const k = keyOf(row, col);
@@ -2695,29 +2714,32 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       delete nextBorder[edge];
 
       // border 객체가 비면 제거
-      if (
+      const borderEmpty =
         !nextBorder.top &&
         !nextBorder.right &&
         !nextBorder.bottom &&
-        !nextBorder.left
-      ) {
+        !nextBorder.left;
+
+      if (borderEmpty) {
         const next: CellStyle = { ...cur };
         delete next.border;
 
+        // style 자체도 완전 비면 엔트리 삭제
         if (Object.keys(next).length === 0) {
-          delete map[k]; // 완전 빈 스타일이면 엔트리 제거
-          touchDelete.push({ row, col });
+          delete map[k];
+          markDelete(row, col);
         } else {
           map[k] = next;
-          touchUpsert.push({ row, col, style: next });
+          markUpsert(row, col, next);
         }
-      } else {
-        map[k] = { ...cur, border: nextBorder };
-        touchUpsert.push({ row, col, style: map[k] });
+        return;
       }
-    };
 
-    if (!box) return;
+      // border 일부만 제거된 상태
+      const nextStyle: CellStyle = { ...cur, border: nextBorder };
+      map[k] = nextStyle;
+      markUpsert(row, col, nextStyle);
+    };
 
     for (const { row, col } of targets) {
       const onTop = row === box.sr;
@@ -2725,66 +2747,73 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       const onLeft = col === box.sc;
       const onRight = col === box.ec;
 
-      if (!mode) {
-        // 전체 보더 제거
-        ["top", "bottom", "left", "right"].forEach((e) =>
-          clearEdge(row, col, e as keyof CellBorder)
+      if (!mode || mode === "all") {
+        (["top", "bottom", "left", "right"] as Array<keyof CellBorder>).forEach(
+          (e) => clearEdge(row, col, e)
         );
         continue;
       }
 
-      if (mode === "all") {
-        ["top", "bottom", "left", "right"].forEach((e) =>
-          clearEdge(row, col, e as keyof CellBorder)
-        );
-      } else if (mode === "outline") {
+      if (mode === "outline") {
         if (onTop) clearEdge(row, col, "top");
         if (onBottom) clearEdge(row, col, "bottom");
         if (onLeft) clearEdge(row, col, "left");
         if (onRight) clearEdge(row, col, "right");
-      } else if (mode === "inner") {
+        continue;
+      }
+
+      if (mode === "inner") {
         if (!onTop) clearEdge(row, col, "top");
         if (!onBottom) clearEdge(row, col, "bottom");
         if (!onLeft) clearEdge(row, col, "left");
         if (!onRight) clearEdge(row, col, "right");
+        continue;
       }
     }
 
     // 로컬 적용
     set({ stylesByCell: map });
 
-    // 비차단 저장(업서트/삭제 분리)
+    // 저장
     if (autoSaveEnabled) {
-      // 비차단 저장(업서트/삭제 분리)
       void withUserId(async (uid) => {
         const { sheetId } = get();
+        if (!sheetId) return;
 
-        if (touchUpsert.length > 0) {
-          const rows = touchUpsert.map(({ row, col, style }) => ({
-            user_id: uid,
-            sheet_id: sheetId,
-            row,
-            col,
-            style_json: style,
-            updated_at: new Date().toISOString(),
-          }));
+        if (upsertMap.size > 0) {
+          const rows = Array.from(upsertMap.values()).map(
+            ({ row, col, style }) => ({
+              user_id: uid,
+              sheet_id: sheetId,
+              row,
+              col,
+              style_json: style,
+              updated_at: new Date().toISOString(),
+            })
+          );
+
           const { error } = await supabase
             .from("cell_styles")
             .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+
           if (error)
             console.error("cell_styles border clear upsert 실패:", error);
         }
 
-        if (touchDelete.length > 0) {
-          const orClauses = touchDelete.map(
+        if (deleteMap.size > 0) {
+          const targetsToDelete = Array.from(deleteMap.values());
+
+          const orClauses = targetsToDelete.map(
             ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
           );
+
           const { error } = await supabase
             .from("cell_styles")
             .delete()
             .eq("user_id", uid)
             .eq("sheet_id", sheetId)
             .or(orClauses.join(","));
+
           if (error)
             console.error("cell_styles border clear delete 실패:", error);
         }
