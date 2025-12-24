@@ -7,6 +7,9 @@ type Mode = "signin" | "signup";
 const isEmail = (v: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
+const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL as string | undefined;
+const DEMO_PW = import.meta.env.VITE_DEMO_PW as string | undefined;
+
 export default function Login() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState<string>("");
@@ -85,6 +88,33 @@ export default function Login() {
     } catch (e: unknown) {
       const message =
         e instanceof Error ? e.message : "재설정 메일 전송 중 오류";
+      setErr(message);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function onDemoLogin(): Promise<void> {
+    setErr(null);
+    setOk(null);
+
+    if (!DEMO_EMAIL || !DEMO_PW) {
+      setErr("데모 계정 설정이 누락되었습니다. (VITE_DEMO_EMAIL/PW)");
+      return;
+    }
+
+    setPending(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: DEMO_EMAIL,
+        password: DEMO_PW,
+      });
+      if (error) throw error;
+
+      setOk("데모로 로그인했습니다.");
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "데모 로그인 중 알 수 없는 오류";
       setErr(message);
     } finally {
       setPending(false);
@@ -213,6 +243,17 @@ export default function Login() {
                   ? "로그인"
                   : "회원가입"}
               </button>
+
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  className={styles.demoBtn}
+                  onClick={onDemoLogin}
+                  disabled={pending}
+                >
+                  {pending ? "처리 중..." : "Demo로 로그인 (저장 불가)"}
+                </button>
+              )}
 
               {/* 회원가입 / 비번 리셋 버튼 꾸밈 */}
               <div className={styles.secondaryRow}>

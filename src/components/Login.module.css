@@ -165,3 +165,28 @@
   cursor: pointer;
   text-decoration: underline;
 }
+
+.demoBtn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  background: #ffffff;
+  color: #0f172a; /* slate-900 */
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.03s ease;
+}
+
+.demoBtn:hover {
+  background: #f8fafc; /* slate-50 */
+}
+
+.demoBtn:active {
+  transform: scale(0.99);
+}
+
+.demoBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
