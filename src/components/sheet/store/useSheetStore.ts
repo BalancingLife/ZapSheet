@@ -158,7 +158,10 @@ type DataSlice = {
 
 type ClipboardSlice = {
   // 내부 복사 버퍼 (마지막 복사된 2D 그리드)
-  clipboard: string[][] | null;
+  clipboard: {
+    values: string[][];
+    styles: (CellStyle | null)[][];
+  } | null;
 
   // 현재 selection을 TSV로 반환하고, 내부 버퍼에도 저장
   copySelectionToTSV: () => string;
@@ -2062,56 +2065,165 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // 선택된 영역을 복사 형식(TSV) 으로 만듦
   copySelectionToTSV: () => {
-    const { selection } = get();
-
+    const { selection, stylesByCell } = get();
     if (!selection) return "";
 
-    const grid = get2DGrid(selection);
+    // 값 2D
+    const values = get2DGrid(selection);
 
-    set({ clipboard: grid });
+    // 스타일 2D (없으면 null)
+    const h = values.length;
+    const w = Math.max(...values.map((r) => r.length));
 
-    return gridToTSV(grid);
+    const styles: (CellStyle | null)[][] = Array.from({ length: h }, (_, rr) =>
+      Array.from({ length: w }, (_, cc) => {
+        const r = clampRow(selection.sr + rr);
+        const c = clampCol(selection.sc + cc);
+        const s = stylesByCell[keyOf(r, c)];
+        return s ?? null;
+      })
+    );
+
+    set({ clipboard: { values, styles } });
+
+    return gridToTSV(values);
   },
 
   pasteGridFromSelection: async (grid) => {
-    // 선택 영역 확인
-    const { selection, pushHistory, data, autoSaveEnabled } = get();
+    const { selection, pushHistory, data, autoSaveEnabled, stylesByCell } =
+      get();
     if (!selection) return;
 
     pushHistory();
 
-    const prev = data; // 기존 로컬 데이터
-    const next = { ...prev }; // 붙여넣기 후의 새로운 데이터
+    // ----- 1) 값 붙여넣기 -----
+    const prev = data;
+    const next = { ...prev };
 
-    const h = grid.length; // 행 개수
-    const w = Math.max(...grid.map((r) => r.length)); // 열 개수
+    const h = grid.length;
+    const w = Math.max(...grid.map((r) => r.length));
 
-    // grid 값을 selection의 좌상단부터 채워넣기
     for (let rr = 0; rr < h; rr++) {
       for (let cc = 0; cc < w; cc++) {
         const r = clampRow(selection.sr + rr);
         const c = clampCol(selection.sc + cc);
         const v = grid[rr][cc] ?? "";
-        next[keyOf(r, c)] = v; // "2:3": "A" 이런 식으로 값 기록
+        next[keyOf(r, c)] = v;
       }
     }
 
-    // 상태 업데이트 (UI 반영)
+    // ----- 2) 스타일 붙여넣기 (내부 클립보드가 있을 때만) -----
+    const clip = get().clipboard;
+
+    // 붙여넣기 대상 영역(값 기준)
+    const targetRect = {
+      sr: selection.sr,
+      sc: selection.sc,
+      er: clampRow(selection.sr + h - 1),
+      ec: clampCol(selection.sc + w - 1),
+    };
+
+    let nextStylesByCell = stylesByCell;
+    const toUpsertRemote: Array<{
+      row: number;
+      col: number;
+      style: CellStyle;
+    }> = [];
+    const toDeleteRemote: Array<{ row: number; col: number }> = [];
+
+    if (clip?.styles) {
+      const styleH = clip.styles.length;
+      const styleW = Math.max(...clip.styles.map((r) => r.length));
+
+      nextStylesByCell = { ...stylesByCell };
+
+      for (let rr = 0; rr < h; rr++) {
+        for (let cc = 0; cc < w; cc++) {
+          const r = clampRow(selection.sr + rr);
+          const c = clampCol(selection.sc + cc);
+
+          // 스타일은 "값 붙여넣기 크기"만큼 적용.
+          // (src 스타일 grid가 더 작으면 해당 칸은 null로 간주 → 스타일 제거)
+          const srcStyle =
+            clip.styles[rr]?.[cc] ??
+            // 혹시 값 grid와 스타일 grid 크기가 다를 때를 대비한 안전장치
+            (rr < styleH && cc < styleW ? clip.styles[rr][cc] : null);
+
+          const k = keyOf(r, c);
+
+          if (!srcStyle || Object.keys(srcStyle).length === 0) {
+            // ✅ 구글처럼: 원본에 커스텀 스타일이 없으면 타겟도 커스텀 스타일 제거
+            if (nextStylesByCell[k]) {
+              delete nextStylesByCell[k];
+              toDeleteRemote.push({ row: r, col: c });
+            }
+          } else {
+            nextStylesByCell[k] = srcStyle;
+            toUpsertRemote.push({ row: r, col: c, style: srcStyle });
+          }
+        }
+      }
+    }
+
+    // ----- 3) 상태 업데이트 -----
     set({
       data: next,
-      selection: {
-        sr: selection.sr,
-        sc: selection.sc,
-        er: clampRow(selection.sr + h - 1),
-        ec: clampCol(selection.sc + w - 1),
-      },
+      stylesByCell: nextStylesByCell,
+      selection: targetRect,
       isSelecting: false,
       anchor: null,
       head: null,
     });
 
+    // ----- 4) 영속화 -----
     if (autoSaveEnabled) {
+      // 값 저장
       await persistDataDiff(prev, next);
+
+      // 스타일 저장 (클립보드가 있을 때만 의미 있음)
+      if (
+        clip?.styles &&
+        (toUpsertRemote.length > 0 || toDeleteRemote.length > 0)
+      ) {
+        await withUserId(async (uid) => {
+          const { sheetId } = get();
+          if (!sheetId) return;
+
+          // upsert
+          if (toUpsertRemote.length > 0) {
+            const rows = toUpsertRemote.map(({ row, col, style }) => ({
+              user_id: uid,
+              sheet_id: sheetId,
+              row,
+              col,
+              style_json: style,
+              updated_at: new Date().toISOString(),
+            }));
+
+            const { error } = await supabase
+              .from("cell_styles")
+              .upsert(rows, { onConflict: "user_id,sheet_id,row,col" });
+
+            if (error) console.error("paste: cell_styles upsert 실패:", error);
+          }
+
+          // delete
+          if (toDeleteRemote.length > 0) {
+            const orClauses = toDeleteRemote.map(
+              ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+            );
+
+            const { error } = await supabase
+              .from("cell_styles")
+              .delete()
+              .eq("user_id", uid)
+              .eq("sheet_id", sheetId)
+              .or(orClauses.join(","));
+
+            if (error) console.error("paste: cell_styles delete 실패:", error);
+          }
+        });
+      }
     } else {
       set({ hasUnsavedChanges: true });
     }
