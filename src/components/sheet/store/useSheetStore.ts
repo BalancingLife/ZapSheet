@@ -2912,7 +2912,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   },
 
   removeSheet: async (id) => {
-    const { sheets } = get();
+    const { sheets, currentSheetId } = get();
     if (sheets.length <= 1) return; // 마지막 1개는 보호
 
     await withUserId(async (uid) => {
@@ -2922,6 +2922,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         .delete()
         .eq("user_id", uid)
         .eq("sheet_id", id);
+
       if (error) {
         console.error("removeSheet 실패:", error);
         return;
@@ -2933,14 +2934,24 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       const newSheets = sheets.filter((s) => s.id !== id);
 
-      // 3) 다음 current 를 “반드시 string”으로 결정
-      //    - 지운 탭의 왼쪽(가능하면) 아니면 첫 탭
-      const nextIdx = Math.max(0, idxRemoved - 1);
-      const next = newSheets[nextIdx] ?? newSheets[0]; // newSheets는 최소 1개 보장
-      const nextId = next.id; // <- string 확정
+      // 3) 다음 current 결정
+      //    - 지운 시트가 현재 시트면: 왼쪽(가능하면) 아니면 첫 탭
+      //    - 지운 시트가 현재가 아니면: current 유지
+      let nextId: string;
 
+      if (currentSheetId === id) {
+        const nextIdx = Math.max(0, idxRemoved - 1);
+        const next = newSheets[nextIdx] ?? newSheets[0]; // newSheets는 최소 1개 보장
+        nextId = next.id;
+      } else {
+        // 삭제 대상이 현재가 아니면 기존 current 유지 (단, 안전하게 fallback)
+        const stillExists = newSheets.some((s) => s.id === currentSheetId);
+        nextId = stillExists ? (currentSheetId as string) : newSheets[0].id;
+      }
+
+      // 4) 상태 반영
       set({ sheets: newSheets });
-      get().setCurrentSheet(nextId); //
+      get().setCurrentSheet(nextId);
     });
   },
 

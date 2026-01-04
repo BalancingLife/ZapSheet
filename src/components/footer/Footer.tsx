@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import styles from "./Footer.module.css";
 import { useSheetStore } from "../sheet/store/useSheetStore";
+import ConfirmModal from "../common/ConfirmModal";
 
 type ContextMenuState = {
   open: boolean;
@@ -48,6 +49,9 @@ export default function Footer() {
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (editingId && inputRef.current) {
@@ -103,7 +107,8 @@ export default function Footer() {
 
   const onClickDelete = () => {
     if (!menu.sheetId) return;
-    removeSheet(menu.sheetId);
+    setPendingDeleteId(menu.sheetId);
+    setDeleteOpen(true);
     setMenu({ open: false, x: 0, y: 0, sheetId: null });
   };
 
@@ -113,6 +118,18 @@ export default function Footer() {
     if (!target) return;
     startRename(target.id, target.name);
     setMenu({ open: false, x: 0, y: 0, sheetId: null });
+  };
+
+  const cancelDelete = () => {
+    setDeleteOpen(false);
+    setPendingDeleteId(null);
+  };
+
+  const confirmDelete = () => {
+    if (!pendingDeleteId) return;
+    removeSheet(pendingDeleteId);
+    setDeleteOpen(false);
+    setPendingDeleteId(null);
   };
 
   const openPickerFromButton = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -325,6 +342,16 @@ export default function Footer() {
           </button>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteOpen}
+        title="주의"
+        message="시트를 삭제하시겠습니까?"
+        cancelText="취소"
+        confirmText="확인"
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
