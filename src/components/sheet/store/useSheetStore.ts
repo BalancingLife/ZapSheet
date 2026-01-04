@@ -246,6 +246,13 @@ type SheetListSlice = {
   setCurrentSheet: (id: string) => void;
   renameSheet: (id: string, newName: string) => void;
   removeSheet: (id: string) => void;
+
+  // 드래그로 시트 순서 변경(로컬)
+  reorderSheets: (dragId: string, overId: string) => void;
+
+  // 현재 순서를 sheets_meta.order로 저장
+  persistSheetOrder: () => Promise<void>;
+
   loadSheetsMeta: () => Promise<void>;
 };
 
@@ -355,6 +362,14 @@ async function withUserId<T>(
     return;
   }
   return fn(uid);
+}
+
+function arrayMove<T>(arr: T[], from: number, to: number) {
+  if (from === to) return arr;
+  const copy = arr.slice();
+  const [picked] = copy.splice(from, 1);
+  copy.splice(to, 0, picked);
+  return copy;
 }
 
 // keyOf(3,2) => 3:2 반환
@@ -2926,6 +2941,41 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       set({ sheets: newSheets });
       get().setCurrentSheet(nextId); //
+    });
+  },
+
+  reorderSheets: (dragId, overId) => {
+    if (dragId === overId) return;
+
+    const { sheets } = get();
+    const from = sheets.findIndex((s) => s.id === dragId);
+    const to = sheets.findIndex((s) => s.id === overId);
+    if (from < 0 || to < 0) return;
+
+    const next = arrayMove(sheets, from, to);
+    set({ sheets: next });
+  },
+
+  persistSheetOrder: async () => {
+    await withUserId(async (uid) => {
+      const { sheets } = get();
+
+      // sheets_meta.name이 NOT NULL이라 name도 같이 넣는 방식이 안전함
+      const payload = sheets.map((s, idx) => ({
+        user_id: uid,
+        sheet_id: s.id,
+        name: s.name,
+        order: idx,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase
+        .from("sheets_meta")
+        .upsert(payload, { onConflict: "user_id,sheet_id" });
+
+      if (error) {
+        console.error("persistSheetOrder 실패:", error);
+      }
     });
   },
 

@@ -20,6 +20,8 @@ export default function Footer() {
   const setCurrentSheet = useSheetStore((s) => s.setCurrentSheet);
   const renameSheet = useSheetStore((s) => s.renameSheet);
   const removeSheet = useSheetStore((s) => s.removeSheet);
+  const reorderSheets = useSheetStore((s) => s.reorderSheets);
+  const persistSheetOrder = useSheetStore((s) => s.persistSheetOrder);
 
   // 인라인 리네임 상태
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -43,6 +45,9 @@ export default function Footer() {
   const [pickerIndex, setPickerIndex] = useState<number>(-1); // 키보드 탐색용
   const hamburgerBtnRef = useRef<HTMLButtonElement | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
+
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   useEffect(() => {
     if (editingId && inputRef.current) {
@@ -193,7 +198,56 @@ export default function Footer() {
               key={sheet.id}
               role="tab"
               aria-selected={active}
-              className={`${styles.sheetItem} ${active ? styles.active : ""}`}
+              className={`${styles.sheetItem} ${active ? styles.active : ""} ${
+                dragOverId === sheet.id && draggingId !== sheet.id
+                  ? styles.dragOver
+                  : ""
+              }`}
+              draggable={!isEditing}
+              onDragStart={(e) => {
+                if (isEditing) return;
+                e.dataTransfer.effectAllowed = "move";
+                // 일부 브라우저에서 필요: 드래그 데이터 세팅
+                e.dataTransfer.setData("text/plain", sheet.id);
+
+                setDraggingId(sheet.id);
+              }}
+              onDragOver={(e) => {
+                if (!draggingId) return;
+                if (draggingId === sheet.id) return;
+                e.preventDefault(); // ✅ drop 가능하게
+                setDragOverId(sheet.id);
+              }}
+              onDragLeave={() => {
+                // 지나가다 떠날 때 너무 깜빡이면 UX 구려서
+                // 단순히 null 처리만
+                setDragOverId((prev) => (prev === sheet.id ? null : prev));
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // dragId는 state에서 가져오되, 혹시 state가 꼬였으면 dataTransfer fallback
+                const dragId =
+                  draggingId ?? e.dataTransfer.getData("text/plain");
+                const overId = sheet.id;
+
+                if (!dragId || dragId === overId) {
+                  setDraggingId(null);
+                  setDragOverId(null);
+                  return;
+                }
+
+                reorderSheets(dragId, overId);
+                await persistSheetOrder();
+
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
+              onDragEnd={() => {
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
               onClick={() => setCurrentSheet(sheet.id)}
               onDoubleClick={() => startRename(sheet.id, sheet.name)}
               onContextMenu={(e) => onTabContextMenu(e, sheet.id)} // onContexstMenu <= 우클릭 이벤트
