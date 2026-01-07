@@ -493,20 +493,16 @@ export default function ToolBar() {
         </button>
 
         {!autoSaveEnabled && (
-          <>
-            <button
-              type="button"
-              className={`${styles.saveBtn} ${
-                hasUnsavedChanges ? styles.saveBtnDirty : ""
-              }`}
-              onClick={handleSaveClick}
-            >
-              저장
-            </button>
-            {hasUnsavedChanges && (
-              <span className={styles.unsavedLabel}>저장 안 됨</span>
-            )}
-          </>
+          <button
+            type="button"
+            className={`${styles.saveBtn} ${
+              hasUnsavedChanges ? styles.saveBtnDirty : styles.saveBtnClean
+            } ${styles.manualSaveBtn}`}
+            onClick={handleSaveClick}
+            disabled={!hasUnsavedChanges}
+          >
+            {hasUnsavedChanges ? "저장 필요" : "저장됨"}
+          </button>
         )}
       </div>
     </div>

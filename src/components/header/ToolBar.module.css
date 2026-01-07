@@ -374,35 +374,38 @@
   transform: translateX(26px);
 }
 
-/* 수동 저장 버튼/라벨은 기존 그대로 사용 */
 .saveBtn {
-  padding: 3px 12px;
   font-size: 12px;
-  border: 1px solid #ccc;
-  background: #fff;
-  border-radius: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
 }
 
-.saveBtn:hover {
-  background: #f7f7f7;
+/* 자동 저장 OFF 전용 */
+.manualSaveBtn {
+  min-width: 42px; /* ← 여기서 넓혀 */
+  text-align: center;
 }
 
+/* 상태별 */
 .saveBtnDirty {
-  border-color: #ff5b5b;
-  color: #d80000;
-  font-weight: 600;
+  color: #ffffff;
+  background: #d60000;
+  border-color: #b80000;
 }
 
-.saveBtnDirty:hover {
-  background: #ffecec;
+.saveBtnClean {
+  color: #374151;
+  background: #e5e7eb;
+  border-color: #d1d5db;
+  cursor: default;
 }
 
-.unsavedLabel {
-  font-size: 11px;
-  color: #d60000;
-  font-weight: 600;
+.saveBtn:disabled {
+  opacity: 1;
 }
 
 /* ===== Merge (셀 병합) ===== */
