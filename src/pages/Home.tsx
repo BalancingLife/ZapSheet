@@ -6,11 +6,13 @@ import SheetBoot from "@/components/sheet/SheetBoot";
 
 export default function Home() {
   return (
-    <div className={styles.container}>
+    <>
       <SheetBoot />
-      <Header />
-      <Sheet />
-      <Footer />
-    </div>
+      <div className={styles.container}>
+        <Header />
+        <Sheet />
+        <Footer />
+      </div>
+    </>
   );
 }
