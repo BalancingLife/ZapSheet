@@ -105,7 +105,7 @@ export default function EditOverlay({
         left: box.left,
         width: box.width,
         height: box.height,
-        zIndex: 5000, // 셀 위
+        zIndex: 60, // 셀 위
         // 편집 중엔 input이 클릭 가능해야 하니까 auto
         pointerEvents: "auto",
       }}

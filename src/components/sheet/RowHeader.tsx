@@ -48,7 +48,10 @@ export default function RowHeader({ rowHeaderWidth }: RowHeaderProps) {
       <div
         key={i}
         className={selected ? `${styles.rowHeader} selected` : styles.rowHeader}
-        style={{ height: rowHeights[i], width: rowHeaderWidth }}
+        style={{
+          height: rowHeights[i],
+          width: rowHeaderWidth,
+        }}
         role="button"
         tabIndex={0}
         onMouseDown={(e) => {

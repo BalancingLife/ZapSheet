@@ -120,7 +120,7 @@ export default function MergedCellOverlay({
               padding: "0 4px 2px 4px",
               overflow: "hidden",
               whiteSpace: "nowrap",
-              zIndex: 3000, // 셀 위, EditOverlay(5000) 아래 정도
+              zIndex: 50,
               color: isErr ? "#d93025" : style?.textColor,
               fontSize: `${fontSize}px`,
               fontWeight: style?.bold ? "bold" : "normal",

@@ -48,7 +48,10 @@ export default function ColHeader({ colHeaderHeight }: ColHeaderProps) {
       <div
         key={i}
         className={selected ? `${styles.colHeader} selected` : styles.colHeader}
-        style={{ width: columnWidths[i], height: colHeaderHeight }}
+        style={{
+          width: columnWidths[i],
+          height: colHeaderHeight,
+        }}
         role="button"
         tabIndex={0}
         onMouseDown={(e) => {
