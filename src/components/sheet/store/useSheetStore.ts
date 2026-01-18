@@ -3112,16 +3112,31 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         ? sheets
         : [{ id: "default", name: "Sheet1" }];
 
-      // final[0]는 존재 보장 → string 확정
-      set({ sheets: final, currentSheetId: final[0].id, sheetId: final[0].id });
+      const prevId = get().currentSheetId; // 👈 현재 보고 있던 시트
+      const nextId =
+        prevId && final.some((s) => s.id === prevId) ? prevId : final[0].id;
 
-      await Promise.all([
-        get().loadLayout(),
-        get().loadUserSettings(),
-        get().loadCellData(),
-        get().loadCellStyles(),
-      ]);
-      get().syncMirrorToFocus();
+      // 목록은 갱신하되, 현재 시트는 유지
+      set({ sheets: final });
+
+      // ✅ 첫 부팅(아직 currentSheetId가 없을 때)만 리소스 로드
+      if (!prevId) {
+        set({ currentSheetId: nextId, sheetId: nextId });
+
+        await Promise.all([
+          get().loadLayout(),
+          get().loadUserSettings(),
+          get().loadCellData(),
+          get().loadCellStyles(),
+        ]);
+        get().syncMirrorToFocus();
+        return;
+      }
+
+      // ✅ 현재 시트가 삭제돼서 fallback 해야 하는 경우에만 바꿔줌
+      if (prevId !== nextId) {
+        get().setCurrentSheet(nextId);
+      }
     });
   },
 
