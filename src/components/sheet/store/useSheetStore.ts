@@ -227,7 +227,7 @@ type StyleSlice = {
 
   loadCellStyles: () => Promise<void>;
   upsertCellStyles?: (
-    payload: Array<{ row: number; col: number; style_json: CellStyle }>
+    payload: Array<{ row: number; col: number; style_json: CellStyle }>,
   ) => Promise<void>;
 
   getCellStyle: (row: number, col: number) => CellStyle | undefined;
@@ -236,7 +236,7 @@ type StyleSlice = {
 
   applyBorderToSelection: (
     mode: BorderApplyMode,
-    spec: BorderSpec
+    spec: BorderSpec,
   ) => Promise<void> | void;
   clearSelectionBorders: (mode?: BorderApplyMode) => Promise<void> | void;
 };
@@ -357,7 +357,7 @@ async function getCurrentUserId(): Promise<string | null> {
 // 되어 있으면 uid 넣어서 네 콜백 실행시켜줄게"
 // 라는 안전한 비동기 헬퍼 함수
 async function withUserId<T>(
-  fn: (uid: string) => Promise<T>
+  fn: (uid: string) => Promise<T>,
 ): Promise<T | void> {
   const uid = await getCurrentUserId();
   if (!uid) {
@@ -455,7 +455,7 @@ function rectToCells(sel: Rect): Array<Pos> {
 // setFocusAsSingleSelection(set, pos) : 지금 클릭된 셀 하나만 focus & selection으로 만드는 함수
 function setFocusAsSingleSelection(
   set: (p: Partial<SheetState>) => void, // zustand set 함수
-  pos: Pos
+  pos: Pos,
 ) {
   set({
     focus: pos, // pos를 focus
@@ -512,7 +512,7 @@ function extendSelectionWith(
   get: () => SheetState,
   set: (partial: Partial<SheetState>) => void,
   dir: Dir,
-  strategy: "step" | "edge"
+  strategy: "step" | "edge",
 ) {
   const state = get();
   const { focus, anchor, head, selection, getMergeRegionAt } = state;
@@ -608,7 +608,7 @@ const rectH = (r: Rect) => r.er - r.sr + 1;
 function collectColumnValues(
   src: Rect,
   col: number,
-  data: Record<string, string>
+  data: Record<string, string>,
 ): number[] | null {
   const out: number[] = [];
   for (let r = src.sr; r <= src.er; r++) {
@@ -627,7 +627,7 @@ function collectColumnValues(
 function collectRowValues(
   src: Rect,
   row: number,
-  data: Record<string, string>
+  data: Record<string, string>,
 ): number[] | null {
   const out: number[] = [];
   for (let c = src.sc; c <= src.ec; c++) {
@@ -655,7 +655,7 @@ function collectRowValues(
 function inferNumberFillPattern(
   values: number[],
   axis: "row" | "col",
-  startIndex: number
+  startIndex: number,
 ): NumberFillPattern | null {
   if (values.length === 0) return null;
 
@@ -694,7 +694,7 @@ function get2DGrid(sel: Rect): string[][] {
   // 빈 2D 배열 초기화:
   // h=3, w=4 → [['','','',''], ['','','',''], ['','','','']]
   const grid: string[][] = Array.from({ length: h }, () =>
-    Array<string>(w).fill("")
+    Array<string>(w).fill(""),
   );
 
   //루프 돌며 실제 값 채우기:
@@ -723,7 +723,7 @@ export function tsvToGrid(tsv: string): string[][] {
 // Undo/Redo 이후 “바뀐 셀만” 업서트/삭제 → 네트워크 최소화.
 async function persistDataDiff(
   oldData: Record<string, string>,
-  newData: Record<string, string>
+  newData: Record<string, string>,
 ) {
   const toUpsert: Array<{ row: number; col: number; value: string }> = [];
   const toDelete: Array<{ row: number; col: number }> = [];
@@ -768,7 +768,7 @@ async function persistDataDiff(
 
     if (toDelete.length > 0) {
       const orClauses = toDelete.map(
-        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`,
       );
       const { error } = await supabase
         .from("cells")
@@ -784,7 +784,7 @@ async function persistDataDiff(
 // 스타일 상태의 diff를 계산해 DB에 배치 업서트/삭제하는 함수
 async function persistStyleDiff(
   oldStyles: Record<string, CellStyle>,
-  newStyles: Record<string, CellStyle>
+  newStyles: Record<string, CellStyle>,
 ) {
   const toUpsert: Array<{ row: number; col: number; style_json: CellStyle }> =
     [];
@@ -832,7 +832,7 @@ async function persistStyleDiff(
 
     if (toDelete.length > 0) {
       const orClauses = toDelete.map(
-        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+        ({ row, col }) => `and(row.eq.${row},col.eq.${col})`,
       );
       const { error } = await supabase
         .from("cell_styles")
@@ -899,7 +899,7 @@ async function persistMergeDiff(oldRegs: Rect[], newRegs: Rect[]) {
 
     if (toDelete.length > 0) {
       const orClauses = toDelete.map(
-        (r) => `and(sr.eq.${r.sr},sc.eq.${r.sc},er.eq.${r.er},ec.eq.${r.ec})`
+        (r) => `and(sr.eq.${r.sr},sc.eq.${r.sc},er.eq.${r.er},ec.eq.${r.ec})`,
       );
       const { error } = await supabase
         .from("sheet_merges")
@@ -953,7 +953,7 @@ function resolveBorderEdge(
   row: number,
   col: number,
   edge: "top" | "left" | "right" | "bottom",
-  getStyle: (r: number, c: number) => CellStyle | undefined
+  getStyle: (r: number, c: number) => CellStyle | undefined,
 ): BorderSpec | undefined {
   const selfStyle = getStyle(row, col);
   const selfEdge = selfStyle?.border?.[edge];
@@ -1008,10 +1008,10 @@ export function getBorderCss(row: number, col: number): React.CSSProperties {
 export function useBorderCss(row: number, col: number): React.CSSProperties {
   const selfStyle = useSheetStore((s) => s.stylesByCell[`${row}:${col}`]);
   const topStyle = useSheetStore((s) =>
-    row > 0 ? s.stylesByCell[`${row - 1}:${col}`] : undefined
+    row > 0 ? s.stylesByCell[`${row - 1}:${col}`] : undefined,
   );
   const leftStyle = useSheetStore((s) =>
-    col > 0 ? s.stylesByCell[`${row}:${col - 1}`] : undefined
+    col > 0 ? s.stylesByCell[`${row}:${col - 1}`] : undefined,
   );
 
   // 마지막 행·열 여부
@@ -1044,7 +1044,7 @@ export function useBorderCss(row: number, col: number): React.CSSProperties {
 function evalCellByKey(
   key: string,
   state: SheetState,
-  visiting: Set<string>
+  visiting: Set<string>,
 ): CalcValue {
   // 순환 참조 방지
   if (visiting.has(key)) {
@@ -1217,6 +1217,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // Supabase에서 이 시트의 저장된 레이아웃을 가져와서 상태를 채운다.
   loadLayout: async () => {
+    console.trace("loadLayout called");
     // 0) 아직 준비 안됨
     set({ isLayoutReady: false });
     await withUserId(async (uid) => {
@@ -1251,11 +1252,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         set({
           columnWidths: Array.from(
             { length: COLUMN_COUNT },
-            () => DEFAULT_COL_WIDTH
+            () => DEFAULT_COL_WIDTH,
           ),
           rowHeights: Array.from(
             { length: ROW_COUNT },
-            () => DEFAULT_ROW_HEIGHT
+            () => DEFAULT_ROW_HEIGHT,
           ),
           isLayoutReady: true,
         });
@@ -1317,7 +1318,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     if (resizing.type === "col") {
       const next = Math.max(
         COL_MIN,
-        Math.min(COL_MAX, resizing.startSize + delta)
+        Math.min(COL_MAX, resizing.startSize + delta),
       );
       const arr = get().columnWidths.slice(); // slice로 배열 복사, 불변성 유지
       arr[resizing.index] = next;
@@ -1327,7 +1328,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     } else if (resizing.type === "row") {
       const next = Math.max(
         ROW_MIN,
-        Math.min(ROW_MAX, resizing.startSize + delta)
+        Math.min(ROW_MAX, resizing.startSize + delta),
       );
       const arr = get().rowHeights.slice(); // slice로 배열 복사, 불변성 유지
       arr[resizing.index] = next;
@@ -1858,7 +1859,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
             editingSource: null,
             formulaCaret: undefined,
           }
-        : {}
+        : {},
     ),
 
   commitEdit: async (rawValue?: string) => {
@@ -2045,7 +2046,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         if (!sheetId) return;
 
         const orClauses = targets.map(
-          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+          ({ row, col }) => `and(row.eq.${row},col.eq.${col})`,
         );
         const { error } = await supabase
           .from("cells")
@@ -2081,7 +2082,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         const c = clampCol(selection.sc + cc);
         const s = stylesByCell[keyOf(r, c)];
         return s ?? null;
-      })
+      }),
     );
 
     set({ clipboard: { values, styles } });
@@ -2210,7 +2211,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           // delete
           if (toDeleteRemote.length > 0) {
             const orClauses = toDeleteRemote.map(
-              ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+              ({ row, col }) => `and(row.eq.${row},col.eq.${col})`,
             );
 
             const { error } = await supabase
@@ -2412,7 +2413,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     set((st) =>
       st.formulaMirror === next && st.formulaCaret === nextCaret
         ? {}
-        : { formulaMirror: next, formulaCaret: nextCaret }
+        : { formulaMirror: next, formulaCaret: nextCaret },
     );
   },
 
@@ -2554,7 +2555,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         // delete
         if (toDeleteRemote.length > 0) {
           const orClauses = toDeleteRemote.map(
-            ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+            ({ row, col }) => `and(row.eq.${row},col.eq.${col})`,
           );
           const { error } = await supabase
             .from("cell_styles")
@@ -2618,7 +2619,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       const desiredHeight = Math.max(
         DEFAULT_ROW_HEIGHT,
-        Math.round(maxFont * FONT_SIZE_TO_ROW_RATIO)
+        Math.round(maxFont * FONT_SIZE_TO_ROW_RATIO),
       );
 
       if (Math.abs(rowHeights[r] - desiredHeight) > 1) {
@@ -2711,8 +2712,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const box: Rect | null = selection
       ? { ...selection }
       : focus
-      ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
-      : null;
+        ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
+        : null;
 
     const touch: Array<{ row: number; col: number }> = [];
 
@@ -2806,8 +2807,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
     const box: Rect | null = selection
       ? { ...selection }
       : focus
-      ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
-      : null;
+        ? { sr: focus.row, sc: focus.col, er: focus.row, ec: focus.col }
+        : null;
 
     if (!box) return;
 
@@ -2876,7 +2877,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
       if (!mode || mode === "all") {
         (["top", "bottom", "left", "right"] as Array<keyof CellBorder>).forEach(
-          (e) => clearEdge(row, col, e)
+          (e) => clearEdge(row, col, e),
         );
         continue;
       }
@@ -2916,7 +2917,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
               col,
               style_json: style,
               updated_at: new Date().toISOString(),
-            })
+            }),
           );
 
           const { error } = await supabase
@@ -2931,7 +2932,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           const targetsToDelete = Array.from(deleteMap.values());
 
           const orClauses = targetsToDelete.map(
-            ({ row, col }) => `and(row.eq.${row},col.eq.${col})`
+            ({ row, col }) => `and(row.eq.${row},col.eq.${col})`,
           );
 
           const { error } = await supabase
@@ -3017,7 +3018,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       }
       set((state) => ({
         sheets: state.sheets.map((s) =>
-          s.id === id ? { ...s, name: newName } : s
+          s.id === id ? { ...s, name: newName } : s,
         ),
       }));
     });
@@ -3148,7 +3149,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
           auto_save_enabled: enabled,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "user_id" }
+        { onConflict: "user_id" },
       );
 
       if (error) {
@@ -3856,7 +3857,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     const rect: Rect = normRect(
       { row: selection.sr, col: selection.sc },
-      { row: selection.er, col: selection.ec }
+      { row: selection.er, col: selection.ec },
     );
 
     if (rect.sr === rect.er && rect.sc === rect.ec) return;
@@ -3916,7 +3917,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     const rect: Rect = normRect(
       { row: selection.sr, col: selection.sc },
-      { row: selection.er, col: selection.ec }
+      { row: selection.er, col: selection.ec },
     );
 
     pushHistory();
