@@ -1217,9 +1217,6 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // Supabase에서 이 시트의 저장된 레이아웃을 가져와서 상태를 채운다.
   loadLayout: async () => {
-    console.trace("loadLayout called");
-    // 0) 아직 준비 안됨
-    set({ isLayoutReady: false });
     await withUserId(async (uid) => {
       // 2) Supabase에서 레이아웃 조회
       const { data, error } = await supabase
@@ -1227,27 +1224,18 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         .select("column_widths,row_heights")
         .eq("user_id", uid)
         .eq("sheet_id", get().sheetId)
-        .maybeSingle(); // row 있으면 그 row 반환 , 없으면 data = null
-      if (error) {
-        console.error("레이아웃 불러오기 실패:", error);
-      }
-      // data 가 있다면
+        .maybeSingle();
+
+      if (error) console.error("레이아웃 불러오기 실패:", error);
+
       if (data) {
         const cw = Array.isArray(data.column_widths) ? data.column_widths : [];
         const rh = Array.isArray(data.row_heights) ? data.row_heights : [];
         set({
           columnWidths: padTo(cw, COLUMN_COUNT, 100),
           rowHeights: padTo(rh, ROW_COUNT, 25),
-          // 왜 padTo?
-          // cw.length !== COLUMN_COUNT일 수 있다:
-          // 예전에 만든 시트는 열/행 개수가 달랐을 수 있다
-          // DB에 저장된 배열이 더 짧을 수도 있다
-          // 혹은 사람이 실수로 DB를 지웠다가 일부만 남아 있을 수도
-          // 그래서 padTo로 길이를 딱 화면에 필요한 길이로 맞춰줌.
-          // 신뢰할 수 없는 DB 데이터를 클라이언트에서 안전하게 정규화하는 것.
           isLayoutReady: true,
         });
-        // data 가 없다면 디폴트로 초기화
       } else {
         set({
           columnWidths: Array.from(
