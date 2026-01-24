@@ -151,7 +151,7 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   type="email"
-                  placeholder="your@email.com"
+                  placeholder="demo@demo.com"
                   autoComplete="email"
                   required
                 />
@@ -173,7 +173,7 @@ export default function Login() {
                   value={pw}
                   onChange={(e) => setPw(e.target.value)}
                   type={showPw ? "text" : "password"}
-                  placeholder={mode === "signin" ? "비밀번호" : "6자 이상"}
+                  placeholder={mode === "signin" ? "demo_password" : "6자 이상"}
                   autoComplete={
                     mode === "signin" ? "current-password" : "new-password"
                   }
@@ -240,8 +240,8 @@ export default function Login() {
                 {pending
                   ? "처리 중..."
                   : mode === "signin"
-                  ? "로그인"
-                  : "회원가입"}
+                    ? "로그인"
+                    : "회원가입"}
               </button>
 
               {mode === "signin" && (
@@ -251,7 +251,7 @@ export default function Login() {
                   onClick={onDemoLogin}
                   disabled={pending}
                 >
-                  {pending ? "처리 중..." : "Demo로 로그인 (저장 불가)"}
+                  {pending ? "처리 중..." : "Demo로 로그인해보기"}
                 </button>
               )}
 
