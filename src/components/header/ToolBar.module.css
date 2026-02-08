@@ -12,7 +12,9 @@
   box-sizing: border-box;
   overflow-x: auto;
 }
-
+.undoIcon {
+  margin-right: 10px;
+}
 .undoIcon,
 .redoIcon {
   display: flex;
@@ -109,7 +111,9 @@
   border-radius: 6px;
   padding: 4px 8px;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 .colorControls button:hover {
   background: #f7f9fa;
@@ -141,7 +145,10 @@
   border-radius: 6px;
   font-size: 14px;
   color: #2f3237;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 .toggleBtn:hover {
   background: #f2f4f6;
@@ -322,7 +329,9 @@
   align-items: center;
   justify-content: flex-start;
   box-sizing: border-box;
-  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 /* ON 상태 */
@@ -428,7 +437,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
   padding: 0;
 }
 
