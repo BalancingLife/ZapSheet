@@ -151,7 +151,7 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   type="email"
-                  placeholder="demo@demo.com"
+                  placeholder="이메일을 입력해주세요."
                   autoComplete="email"
                   required
                 />
@@ -173,7 +173,9 @@ export default function Login() {
                   value={pw}
                   onChange={(e) => setPw(e.target.value)}
                   type={showPw ? "text" : "password"}
-                  placeholder={mode === "signin" ? "demo_password" : "6자 이상"}
+                  placeholder={
+                    mode === "signin" ? "비밀번호를 입력해주세요." : "6자 이상"
+                  }
                   autoComplete={
                     mode === "signin" ? "current-password" : "new-password"
                   }

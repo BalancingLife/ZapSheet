@@ -2290,11 +2290,9 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       autoSaveEnabled,
     } = get();
     if (historyFuture.length === 0) return;
-
     const prevData = data;
     const prevStyles = stylesByCell;
     const prevMerges = mergedRegions;
-
     const next = historyFuture[historyFuture.length - 1];
     const nowSnap = makeSnapshot(get());
 
