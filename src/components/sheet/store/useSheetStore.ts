@@ -14,7 +14,15 @@ import {
 } from "../utils/autoFill";
 import { resolveBorderEdge, toBorderCss } from "../utils/border";
 import { get2DGrid, gridToTSV } from "../utils/clipboard";
-import type { Dir, Pos, Rect } from "../types";
+import type {
+  BorderApplyMode,
+  BorderSpec,
+  CellBorder,
+  CellStyle,
+  Dir,
+  Pos,
+  Rect,
+} from "../types";
 import {
   clamp,
   clampCol,
@@ -43,41 +51,20 @@ import {
   FONT_SIZE_TO_ROW_RATIO,
 } from "../SheetConstants";
 
-export type { Dir, Pos, Rect } from "../types";
+export type {
+  BorderApplyMode,
+  BorderLineStyle,
+  BorderSpec,
+  CellBorder,
+  CellStyle,
+  Dir,
+  Pos,
+  Rect,
+} from "../types";
 export { normRect, rectsIntersect } from "../utils/geometry";
 
 // --------- types ---------
 export type SheetMeta = { id: string; name: string };
-
-export type CellStyle = {
-  fontSize?: number;
-  textColor?: string;
-  bgColor?: string;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  border?: CellBorder;
-
-  textAlign?: "left" | "center" | "right";
-  verticalAlign?: "top" | "middle" | "bottom";
-};
-
-export type BorderLineStyle = "solid" | "dashed" | "dotted";
-
-export type BorderSpec = {
-  color?: string;
-  width?: number;
-  style?: BorderLineStyle;
-};
-
-export type CellBorder = {
-  top?: BorderSpec;
-  right?: BorderSpec;
-  bottom?: BorderSpec;
-  left?: BorderSpec;
-};
-
-type BorderApplyMode = "outline" | "all" | "inner";
 
 // --------- Slice ---------
 
@@ -153,6 +140,8 @@ type EditSlice = {
   editing: Pos | null; // 편집 중인 셀 좌표. null → 편집 모드 아님, 이걸 기반으로 Cell.tsx에서 <input> or <div> 렌더
   // 편집 모드의 출처를 구분해서 selection,focus 충돌 등을 막기 위한 필드
   editingSource: "cell" | "formula" | null;
+  cellEditFocusMode: "select" | "caret-end";
+  setCellEditFocusMode: (mode: "select" | "caret-end") => void;
   // cell → 셀을 더블클릭하거나 Enter 눌러서 편집하기 시작한 경우
   // formula → 포뮬라바(FormilaInput)에서 편집을 시작했을 때
   // null → 편집 중 아님
@@ -1588,6 +1577,8 @@ export const useSheetStore = create<SheetState>((set, get) => ({
   // EditSlice
   editing: null,
   editingSource: null,
+  cellEditFocusMode: "select",
+  setCellEditFocusMode: (mode) => set({ cellEditFocusMode: mode }),
 
   // 해당 셀 편집 모드를 시작한다
   startEdit: (pos, source = "cell") => {
@@ -1601,6 +1592,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         ? {
             editing: null,
             editingSource: null,
+            cellEditFocusMode: "select",
             formulaCaret: undefined,
           }
         : {},
@@ -1639,6 +1631,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
         data: nextData,
         editing: null,
         editingSource: null,
+        cellEditFocusMode: "select",
       };
     });
 

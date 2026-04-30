@@ -1,4 +1,4 @@
-import type { BorderSpec, CellStyle } from "../store/useSheetStore";
+import type { BorderSpec, CellStyle } from "../types";
 
 type BorderEdge = "top" | "left" | "right" | "bottom";
 
