@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { useSheetStore } from "./store/useSheetStore";
 import type { Rect } from "./types";
 import { rectToViewportBox } from "./utils/layoutBox";
 import styles from "./EditOverlay.module.css";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";
+import { composeHangulJamo } from "@/utils/hangul";
 
 type EditOverlayProps = {
   columnWidths: number[];
@@ -47,23 +48,21 @@ export default function EditOverlay({
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // 편집 상태일 때만 포커스 실행
     if (editing && editingSource === "cell") {
-      requestAnimationFrame(() => {
-        const input = inputRef.current;
-        if (!input) return;
+      const input = inputRef.current;
+      if (!input) return;
 
-        input.focus();
+      input.focus();
 
-        if (cellEditFocusMode === "caret-end") {
-          const end = input.value.length;
-          input.setSelectionRange(end, end);
-          return;
-        }
+      if (cellEditFocusMode === "caret-end") {
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+        return;
+      }
 
-        input.select();
-      });
+      input.select();
     }
   }, [editing, editingSource, cellEditFocusMode]);
 
@@ -103,7 +102,13 @@ export default function EditOverlay({
         ref={inputRef}
         className={styles.editorInput}
         value={formulaMirror}
-        onChange={(e) => setFormulaInput(e.target.value)}
+        onChange={(e) => {
+          const nextValue =
+            cellEditFocusMode === "caret-end"
+              ? composeHangulJamo(e.target.value)
+              : e.target.value;
+          setFormulaInput(nextValue);
+        }}
         style={{
           //  편집 대상 셀 스타일 반영
           width: "100%",

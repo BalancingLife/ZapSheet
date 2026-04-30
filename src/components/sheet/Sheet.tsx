@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import styles from "./Sheet.module.css";
 import Corner from "./Corner";
 import ColHeader from "./ColHeader";
@@ -17,7 +18,17 @@ function isDirectCellInputKey(e: KeyboardEvent) {
   const hasCommandModifier =
     e.metaKey || (!isAltGraph && (e.ctrlKey || e.altKey));
 
-  return e.key.length === 1 && !hasCommandModifier;
+  if (hasCommandModifier) return false;
+  return (
+    e.key.length === 1 ||
+    e.key === "Process" ||
+    e.key === "Unidentified" ||
+    e.isComposing
+  );
+}
+
+function getDirectInputFallbackKey(e: KeyboardEvent) {
+  return e.key.length === 1 && /^[\x20-\x7E]$/.test(e.key) ? e.key : null;
 }
 
 export default function Sheet() {
@@ -105,12 +116,31 @@ export default function Sheet() {
 
       // 선택된 셀에서 바로 문자 입력을 시작하면 기존 값을 대체하며 편집 모드로 진입
       if (focus && isDirectCellInputKey(e)) {
-        e.preventDefault();
         e.stopPropagation();
 
-        setCellEditFocusMode("caret-end");
-        setFormulaInput(e.key);
-        startEdit(focus);
+        const fallbackKey = getDirectInputFallbackKey(e);
+        const editTarget = { ...focus };
+
+        flushSync(() => {
+          setCellEditFocusMode("caret-end");
+          setFormulaInput("");
+          startEdit(editTarget);
+        });
+
+        if (fallbackKey) {
+          window.setTimeout(() => {
+            const st = useSheetStore.getState();
+            const stillEditingTarget =
+              st.editing?.row === editTarget.row &&
+              st.editing?.col === editTarget.col &&
+              st.editingSource === "cell";
+
+            if (stillEditingTarget && st.formulaMirror === "") {
+              st.setFormulaInput(fallbackKey);
+            }
+          }, 0);
+        }
+
         return;
       }
 
