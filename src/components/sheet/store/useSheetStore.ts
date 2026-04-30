@@ -12,6 +12,7 @@ import {
   inferNumberFillPattern,
   type NumberFillPattern,
 } from "../utils/autoFill";
+import { resolveBorderEdge, toBorderCss } from "../utils/border";
 import { get2DGrid, gridToTSV } from "../utils/clipboard";
 import type { Dir, Pos, Rect } from "../types";
 import {
@@ -750,55 +751,6 @@ function makeSnapshot(s: SheetState): HistorySnapshot {
     focus: s.focus ? { ...s.focus } : null,
     mergedRegions: s.mergedRegions.map((r) => ({ ...r })),
   };
-}
-
-// 테두리
-
-// normalizeBorderSpec(BorderSpec : color,width,BorderLineStyle)
-// 부분적으로만 들어온 BorderSpec(색/두께/스타일 중 일부) → 완전한 스펙으로 채워 정규화해놓음.
-function normalizeBorderSpec(b?: BorderSpec): Required<BorderSpec> | null {
-  if (!b) return null;
-  return {
-    color: b.color ?? "#222",
-    width: Math.max(0, Math.round(b.width ?? 1)),
-    style: b.style ?? "solid",
-  };
-}
-
-// React style={{ borderTop: ... }}에 바로 꽂아 넣을 문자열이 필요
-// normalizeBorderSpec를 활용해 정규화해놓은 객체를 toBorderCss으로 미리 css언어로 만들어놓음
-function toBorderCss(b?: BorderSpec): string | undefined {
-  const n = normalizeBorderSpec(b);
-  return n ? `${n.width}px ${n.style} ${n.color}` : undefined;
-}
-
-// 테두리를 모든 셀에 네 변 다 그리면 겹침/이중선 생기기 때문에
-// 기본 철학: 항상 위·왼쪽 변만 그린다.
-// top 없으면 → 위 셀의 bottom을 가져옴.
-// left 없으면 → 왼 셀의 right를 가져옴.
-// right,bottom은 마지막 열/행 에서만 그린다.
-function resolveBorderEdge(
-  row: number,
-  col: number,
-  edge: "top" | "left" | "right" | "bottom",
-  getStyle: (r: number, c: number) => CellStyle | undefined,
-): BorderSpec | undefined {
-  const selfStyle = getStyle(row, col);
-  const selfEdge = selfStyle?.border?.[edge];
-
-  // 내가 직접 설정한 보더가 있다면 그걸 우선 적용
-  if (selfEdge) return selfEdge;
-
-  // 없을 경우, 위 셀의 bottom 보더를 대신 쓰기
-  if (edge === "top" && row > 0) {
-    return getStyle(row - 1, col)?.border?.bottom;
-  }
-
-  // 위 셀의 bottom right 보더를 대신 쓰기
-  if (edge === "left" && col > 0) {
-    return getStyle(row, col - 1)?.border?.right;
-  }
-  return undefined;
 }
 
 // 위 border 유틸들이 실제로 렌더링에 적용되는 부분
