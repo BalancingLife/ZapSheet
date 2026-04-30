@@ -12,6 +12,14 @@ import { useSheetStore } from "./store/useSheetStore";
 import SheetSkeleton from "./SheetSkeleton";
 import { tsvToGrid } from "./utils/clipboard";
 
+function isDirectCellInputKey(e: KeyboardEvent) {
+  const isAltGraph = e.getModifierState("AltGraph");
+  const hasCommandModifier =
+    e.metaKey || (!isAltGraph && (e.ctrlKey || e.altKey));
+
+  return e.key.length === 1 && !hasCommandModifier;
+}
+
 export default function Sheet() {
   const loadCellData = useSheetStore((s) => s.loadCellData);
   const editing = useSheetStore((s) => s.editing);
@@ -29,6 +37,8 @@ export default function Sheet() {
   const isLayoutReady = useSheetStore((s) => s.isLayoutReady);
 
   const startEdit = useSheetStore((s) => s.startEdit);
+  const setCellEditFocusMode = useSheetStore((s) => s.setCellEditFocusMode);
+  const setFormulaInput = useSheetStore((s) => s.setFormulaInput);
   const move = useSheetStore((s) => s.move);
   const moveCtrlEdge = useSheetStore((s) => s.moveCtrlEdge);
 
@@ -93,6 +103,17 @@ export default function Sheet() {
 
       const ctrl = e.ctrlKey || e.metaKey; // metakey 는 Command(⌘) (Mac) 또는 Windows 키 (Win)
 
+      // 선택된 셀에서 바로 문자 입력을 시작하면 기존 값을 대체하며 편집 모드로 진입
+      if (focus && isDirectCellInputKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        setCellEditFocusMode("caret-end");
+        setFormulaInput(e.key);
+        startEdit(focus);
+        return;
+      }
+
       // ---- 1) 방향키 : 포커스 1칸 이동 ----
       if (isArrow && !e.shiftKey && !ctrl) {
         e.preventDefault();
@@ -122,6 +143,7 @@ export default function Sheet() {
       if ((e.key === "Enter" || e.key === "F2") && focus && !editing) {
         e.preventDefault();
         e.stopPropagation();
+        setCellEditFocusMode("select");
         startEdit(focus);
         return;
       }
@@ -232,6 +254,8 @@ export default function Sheet() {
     move,
     moveCtrlEdge,
     startEdit,
+    setCellEditFocusMode,
+    setFormulaInput,
     extendSelectionByArrow,
     extendSelectionByCtrlEdge,
     clearSelectionCells,

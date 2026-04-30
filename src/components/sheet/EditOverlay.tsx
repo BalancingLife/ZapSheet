@@ -46,6 +46,7 @@ export default function EditOverlay({
 }: EditOverlayProps) {
   const editing = useSheetStore((s) => s.editing);
   const editingSource = useSheetStore((s) => s.editingSource);
+  const cellEditFocusMode = useSheetStore((s) => s.cellEditFocusMode);
   const getMerge = useSheetStore((s) => s.getMergeRegionAt);
   const commitEdit = useSheetStore((s) => s.commitEdit);
   const cancelEdit = useSheetStore((s) => s.cancelEdit);
@@ -72,11 +73,21 @@ export default function EditOverlay({
     // 편집 상태일 때만 포커스 실행
     if (editing && editingSource === "cell") {
       requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
+        const input = inputRef.current;
+        if (!input) return;
+
+        input.focus();
+
+        if (cellEditFocusMode === "caret-end") {
+          const end = input.value.length;
+          input.setSelectionRange(end, end);
+          return;
+        }
+
+        input.select();
       });
     }
-  }, [editing, editingSource]);
+  }, [editing, editingSource, cellEditFocusMode]);
 
   // 편집 상태가 아니라면 overlay 없음
   if (!editing || editingSource !== "cell") return null;
