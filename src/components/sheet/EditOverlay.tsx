@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useSheetStore } from "./store/useSheetStore";
-import type { Rect } from "./store/useSheetStore";
+import type { Rect } from "./types";
 import styles from "./EditOverlay.module.css";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";
 

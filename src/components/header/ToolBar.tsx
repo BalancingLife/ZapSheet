@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import styles from "./ToolBar.module.css";
-import {
-  useSheetStore,
-  rectsIntersect,
-  normRect,
-} from "../sheet/store/useSheetStore";
+import { useSheetStore } from "../sheet/store/useSheetStore";
+import { normRect, rectsIntersect } from "../sheet/utils/geometry";
 
 export default function ToolBar() {
   const applyStyleToSelection = useSheetStore((s) => s.applyStyleToSelection);

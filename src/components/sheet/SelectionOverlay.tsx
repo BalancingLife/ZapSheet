@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import styles from "./SelectionOverlay.module.css";
-import { useSheetStore, type Rect } from "./store/useSheetStore";
+import { useSheetStore } from "./store/useSheetStore";
+import type { Rect } from "./types";
 import { clientPointToCell } from "@/utils/clientPointToCell";
 
 type Props = {

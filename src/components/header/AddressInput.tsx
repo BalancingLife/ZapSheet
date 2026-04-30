@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./AddressInput.module.css";
-import {
-  useSheetStore,
-  type Rect,
-  type Pos,
-} from "@/components/sheet/store/useSheetStore";
+import { useSheetStore } from "@/components/sheet/store/useSheetStore";
+import type { Pos, Rect } from "@/components/sheet/types";
 import { a1ToRect, rectToA1 } from "@/utils/a1Utils";
 
 export default function AddressInput() {

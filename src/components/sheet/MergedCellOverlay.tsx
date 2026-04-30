@@ -1,7 +1,7 @@
 // src/components/sheet/MergedCellOverlay.tsx
 
 import { useSheetStore } from "./store/useSheetStore";
-import type { Rect } from "./store/useSheetStore";
+import type { Rect } from "./types";
 import { toDisplayString, DISPLAY_ERROR } from "@/utils/formula";
 import { isNumericValue, formatWithComma } from "@/utils/numberFormat";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";

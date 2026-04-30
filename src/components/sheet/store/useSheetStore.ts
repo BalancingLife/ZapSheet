@@ -5,6 +5,21 @@ import { a1ToPos } from "@/utils/a1Utils";
 import { evaluateFormulaToNumber } from "@/utils/formula";
 import { shiftFormulaByOffset } from "@/utils/shiftFormula";
 import { isNumericValue } from "@/utils/numberFormat";
+import type { Dir, Pos, Rect } from "../types";
+import {
+  clamp,
+  clampCol,
+  clampRow,
+  keyOf,
+  normRect,
+  rectContainsCell,
+  rectH,
+  rectToCells,
+  rectsIntersect,
+  rectW,
+  step1,
+  toEdge,
+} from "../utils/geometry";
 
 import {
   ROW_COUNT,
@@ -19,11 +34,11 @@ import {
   FONT_SIZE_TO_ROW_RATIO,
 } from "../SheetConstants";
 
+export type { Dir, Pos, Rect } from "../types";
+export { normRect, rectsIntersect } from "../utils/geometry";
+
 // --------- types ---------
 export type SheetMeta = { id: string; name: string };
-export type Pos = { row: number; col: number };
-export type Rect = { sr: number; sc: number; er: number; ec: number }; // start row, start column, end row, end column
-export type Dir = "up" | "down" | "left" | "right";
 
 // 숫자 시리즈 패턴 타입
 type NumberFillPattern = {
@@ -375,61 +390,6 @@ function arrayMove<T>(arr: T[], from: number, to: number) {
   return copy;
 }
 
-// keyOf(3,2) => 3:2 반환
-const keyOf = (r: number, c: number) => `${r}:${c}`;
-
-// 지정된 범위를 벗어나지 않게 보정
-// 수치를 [lo, hi] 범위로 제한
-const clamp = (v: number, lo: number, hi: number) =>
-  Math.max(lo, Math.min(hi, v));
-
-// 행 인덱스를 시트 높이 범위로 제한
-const clampRow = (r: number) => clamp(r, 0, ROW_COUNT - 1);
-// 열 인덱스를 시트 너비 범위로 제한
-const clampCol = (c: number) => clamp(c, 0, COLUMN_COUNT - 1);
-
-// 마우스로 아래→위 방향으로 드래그하면,
-// 시작점보다 끝점의 좌표가 더 작을 수 있다.
-// 시작: (5, 2)
-// 끝: (2, 4)
-// 이걸 그대로 쓰면 selection 계산이 꼬인다.
-// 그래서 무조건 “좌상단 → 우하단” 순서로 정규화(normalize) 해야 한다.
-// 그걸 담당하는 것이 normRect
-export function normRect(a: Pos, b: Pos): Rect {
-  const sr = Math.min(a.row, b.row); // → 두 좌표 중 더 위쪽 행을 sr(start row)로 지정
-  const er = Math.max(a.row, b.row); // → 두 좌표 중 더 아래쪽 행을 er(end row)로 지정
-  const sc = Math.min(a.col, b.col); // 열도 동일
-  const ec = Math.max(a.col, b.col); // 열도 동일
-  return { sr, sc, er, ec }; // 즉, a와 b 순서에 상관없이 항상 sr ≤ er, sc ≤ ec 가 보장
-}
-
-// DIR : 방향 델타 상수 (상수 컨벤션: 대문자)
-// 모든 방향에 대해 dr(행 변화량)과 dc(열 변화량)을 매핑해둔 딕셔너리
-// 이걸 이용해 이동 계산을 간결하게 표현할 수 있다
-// row += dr;
-// col += dc;
-const DIR: Record<Dir, { dr: number; dc: number }> = {
-  up: { dr: -1, dc: 0 },
-  down: { dr: 1, dc: 0 },
-  left: { dr: 0, dc: -1 },
-  right: { dr: 0, dc: 1 },
-};
-
-// step1(p,dir)) p에서 dir 방향으로 한 칸 이동 함수
-const step1 = (p: Pos, dir: Dir): Pos => {
-  const { dr, dc } = DIR[dir]; // DIR 을 이용하여 행/열 이동 방향량을 가져옴
-  return { row: clampRow(p.row + dr), col: clampCol(p.col + dc) }; // 새로운 객체 Pos (row,col) 를 반환
-};
-
-// toEdge() 경계로 점프하는 함수 (Ctrl + 화살표)
-const toEdge = (p: Pos, dir: Dir): Pos => {
-  if (dir === "up") return { row: 0, col: p.col };
-  if (dir === "down") return { row: ROW_COUNT - 1, col: p.col };
-  if (dir === "left") return { row: p.row, col: 0 };
-  // dir === "right"
-  return { row: p.row, col: COLUMN_COUNT - 1 };
-};
-
 // padTo(arr, len, fill) 배열을 정확히 len 길이로 맞추는 함수
 // 모자라면 fill 값으로 뒤를 채움, 넘치면 뒤를 잘라냄
 // padTo([1,2], 5, 0) → [1,2,0,0,0]
@@ -439,18 +399,6 @@ const toEdge = (p: Pos, dir: Dir): Pos => {
 // loadLayout() 로딩 시 사용
 const padTo = <T>(arr: T[], len: number, fill: T) =>
   [...arr, ...Array(Math.max(0, len - arr.length)).fill(fill)].slice(0, len);
-
-// rectToCells(sel) 사각형 영역을 개별 셀 목록(배열인데 Pos 타입이 들어있는 배열) 으로 풀기
-
-// ex) rectToCells({ sr: 1, sc: 2, er: 2, ec: 3 });
-// [ { row: 1, col: 2 }, { row: 1, col: 3 }, { row: 2, col: 2 }, { row: 2, col: 3 } ] 로 반환
-function rectToCells(sel: Rect): Array<Pos> {
-  const cells: Pos[] = [];
-  for (let r = sel.sr; r <= sel.er; r++) {
-    for (let c = sel.sc; c <= sel.ec; c++) cells.push({ row: r, col: c });
-  }
-  return cells;
-}
 
 // setFocusAsSingleSelection(set, pos) : 지금 클릭된 셀 하나만 focus & selection으로 만드는 함수
 function setFocusAsSingleSelection(
@@ -597,10 +545,6 @@ function debounceLayoutSave(fn: () => void, ms = 500) {
   if (__layoutSaveTimer) clearTimeout(__layoutSaveTimer);
   __layoutSaveTimer = setTimeout(fn, ms);
 }
-
-// 선택 영역 가로/세로 크기 계산
-const rectW = (r: Rect) => r.ec - r.sc + 1;
-const rectH = (r: Rect) => r.er - r.sr + 1;
 
 /** selection 안에서
  *  - 세로 방향 (col 고정, row만 변화) 값 배열 추출
@@ -1101,16 +1045,6 @@ function evalCellByKey(
     return "#VALUE!"; // 평가 실패
   }
   return result;
-}
-
-// 두 Rect가 한 칸이라도 겹치는지 여부
-export function rectsIntersect(a: Rect, b: Rect): boolean {
-  return !(a.er < b.sr || a.sr > b.er || a.ec < b.sc || a.sc > b.ec);
-}
-
-// 특정 셀(row,col)이 Rect 안에 포함되는지
-function rectContainsCell(r: Rect, row: number, col: number): boolean {
-  return row >= r.sr && row <= r.er && col >= r.sc && col <= r.ec;
 }
 
 // =====================

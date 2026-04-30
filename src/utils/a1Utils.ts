@@ -1,4 +1,4 @@
-import { type Rect } from "@/components/sheet/store/useSheetStore";
+import type { Rect } from "@/components/sheet/types";
 
 // 열 번호(index)를 “열 이름(A, B, C, …, Z, AA, AB …)”으로 변환하는 함수
 export function colToLabel(index: number): string {
