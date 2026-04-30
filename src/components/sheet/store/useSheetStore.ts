@@ -12,8 +12,10 @@ import {
   inferNumberFillPattern,
   type NumberFillPattern,
 } from "../utils/autoFill";
+import { padTo } from "../utils/array";
 import { resolveBorderEdge, toBorderCss } from "../utils/border";
 import { get2DGrid, gridToTSV } from "../utils/clipboard";
+import { arrayMove, genId, nextSheetName } from "../utils/sheetList";
 import type {
   BorderApplyMode,
   BorderSpec,
@@ -371,24 +373,6 @@ async function withUserId<T>(
   }
   return fn(uid);
 }
-
-function arrayMove<T>(arr: T[], from: number, to: number) {
-  if (from === to) return arr;
-  const copy = arr.slice();
-  const [picked] = copy.splice(from, 1);
-  copy.splice(to, 0, picked);
-  return copy;
-}
-
-// padTo(arr, len, fill) 배열을 정확히 len 길이로 맞추는 함수
-// 모자라면 fill 값으로 뒤를 채움, 넘치면 뒤를 잘라냄
-// padTo([1,2], 5, 0) → [1,2,0,0,0]
-// padTo([1,2,3,4], 3, 9) → [1,2,3]
-// padTo([], 3, 'x') → ['x','x','x']
-// 핵심: 입력 배열을 건드리지 않고(불변) 지정 길이로 정규화.
-// loadLayout() 로딩 시 사용
-const padTo = <T>(arr: T[], len: number, fill: T) =>
-  [...arr, ...Array(Math.max(0, len - arr.length)).fill(fill)].slice(0, len);
 
 // setFocusAsSingleSelection(set, pos) : 지금 클릭된 셀 하나만 focus & selection으로 만드는 함수
 function setFocusAsSingleSelection(
@@ -875,20 +859,6 @@ function evalCellByKey(
 // =====================
 // Helpers 끝 (공통 유틸)
 // =====================
-
-// sheetSlice
-const genId = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `sheet-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const nextSheetName = (existing: string[]) => {
-  // Sheet1, Sheet2 ... 중 빈 번호를 찾아 부여
-  let n = 1;
-  const set = new Set(existing);
-  while (set.has(`Sheet${n}`)) n += 1;
-  return `Sheet${n}`;
-};
 
 // ==============================
 // ------- store create ---------
