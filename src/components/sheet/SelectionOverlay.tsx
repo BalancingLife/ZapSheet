@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import styles from "./SelectionOverlay.module.css";
 import { useSheetStore } from "./store/useSheetStore";
 import type { Rect } from "./types";
+import { rectToGridBox } from "./utils/layoutBox";
 import { clientPointToCell } from "@/utils/clientPointToCell";
 
 type Props = {
@@ -48,23 +49,6 @@ function computeFillTarget(
   return null;
 }
 
-// Rect -> px box(left/top/width/height)
-function rectToBox(rect: Rect, columnWidths: number[], rowHeights: number[]) {
-  const sumRange = (arr: number[], l: number, r: number) => {
-    if (l > r) return 0;
-    let acc = 0;
-    for (let i = l; i <= r; i++) acc += arr[i];
-    return acc;
-  };
-
-  const left = sumRange(columnWidths, 0, rect.sc - 1);
-  const top = sumRange(rowHeights, 0, rect.sr - 1);
-  const width = sumRange(columnWidths, rect.sc, rect.ec);
-  const height = sumRange(rowHeights, rect.sr, rect.er);
-
-  return { left, top, width, height };
-}
-
 export default function SelectionOverlay({
   columnWidths,
   rowHeights,
@@ -101,9 +85,9 @@ export default function SelectionOverlay({
   const showOverlay = !isSelecting && count >= 2; // 기존처럼: 2칸 이상일 때만 파란 영역
   const showHandle = !isSelecting && !!selection; // ✅ 한 칸이어도 핸들은 항상 노출
 
-  const mainBox = rectToBox(visualSelection, columnWidths, rowHeights);
+  const mainBox = rectToGridBox(visualSelection, columnWidths, rowHeights);
   const previewBox =
-    fillPreview && rectToBox(fillPreview, columnWidths, rowHeights);
+    fillPreview && rectToGridBox(fillPreview, columnWidths, rowHeights);
 
   const handleFillMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();

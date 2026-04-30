@@ -1,34 +1,10 @@
 // src/components/sheet/MergedCellOverlay.tsx
 
 import { useSheetStore } from "./store/useSheetStore";
-import type { Rect } from "./types";
+import { rectToViewportBox } from "./utils/layoutBox";
 import { toDisplayString, DISPLAY_ERROR } from "@/utils/formula";
 import { isNumericValue, formatWithComma } from "@/utils/numberFormat";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";
-
-// EditOverlay에 있는 거랑 거의 동일한 rectToBox
-function rectToBox(
-  rect: Rect,
-  columnWidths: number[],
-  rowHeights: number[],
-  rowHeaderWidth: number,
-  colHeaderHeight: number,
-  scrollX: number,
-  scrollY: number
-) {
-  const sum = (arr: number[], s: number, e: number) => {
-    let acc = 0;
-    for (let i = s; i <= e; i++) acc += arr[i];
-    return acc;
-  };
-
-  const top = colHeaderHeight + sum(rowHeights, 0, rect.sr - 1) - scrollY;
-  const left = rowHeaderWidth + sum(columnWidths, 0, rect.sc - 1) - scrollX;
-  const width = sum(columnWidths, rect.sc, rect.ec);
-  const height = sum(rowHeights, rect.sr, rect.er);
-
-  return { top, left, width, height };
-}
 
 type Props = {
   columnWidths: number[];
@@ -77,7 +53,7 @@ export default function MergedCellOverlay({
         const vAlign: "top" | "middle" | "bottom" =
           style?.verticalAlign ?? "bottom";
 
-        const box = rectToBox(
+        const box = rectToViewportBox(
           rect,
           columnWidths,
           rowHeights,

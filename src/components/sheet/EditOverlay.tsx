@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useSheetStore } from "./store/useSheetStore";
 import type { Rect } from "./types";
+import { rectToViewportBox } from "./utils/layoutBox";
 import styles from "./EditOverlay.module.css";
 import { DEFAULT_FONT_SIZE } from "./SheetConstants";
 
@@ -12,29 +13,6 @@ type EditOverlayProps = {
   scrollX: number;
   scrollY: number;
 };
-
-function rectToBox(
-  rect: Rect,
-  columnWidths: number[],
-  rowHeights: number[],
-  rowHeaderWidth: number,
-  colHeaderHeight: number,
-  scrollX: number,
-  scrollY: number
-) {
-  const sum = (arr: number[], s: number, e: number) => {
-    let acc = 0;
-    for (let i = s; i <= e; i++) acc += arr[i];
-    return acc;
-  };
-
-  const top = colHeaderHeight + sum(rowHeights, 0, rect.sr - 1) - scrollY;
-  const left = rowHeaderWidth + sum(columnWidths, 0, rect.sc - 1) - scrollX;
-  const width = sum(columnWidths, rect.sc, rect.ec);
-  const height = sum(rowHeights, rect.sr, rect.er);
-
-  return { top, left, width, height };
-}
 
 export default function EditOverlay({
   columnWidths,
@@ -98,7 +76,7 @@ export default function EditOverlay({
     ? mr
     : { sr: editing.row, sc: editing.col, er: editing.row, ec: editing.col };
 
-  const box = rectToBox(
+  const box = rectToViewportBox(
     rect,
     columnWidths,
     rowHeights,
