@@ -5,6 +5,13 @@ import { a1ToPos } from "@/utils/a1Utils";
 import { evaluateFormulaToNumber } from "@/utils/formula";
 import { shiftFormulaByOffset } from "@/utils/shiftFormula";
 import { isNumericValue } from "@/utils/numberFormat";
+import {
+  collectColumnValues,
+  collectRowValues,
+  detectFillMode,
+  inferNumberFillPattern,
+  type NumberFillPattern,
+} from "../utils/autoFill";
 import { get2DGrid, gridToTSV } from "../utils/clipboard";
 import type { Dir, Pos, Rect } from "../types";
 import {
@@ -40,14 +47,6 @@ export { normRect, rectsIntersect } from "../utils/geometry";
 
 // --------- types ---------
 export type SheetMeta = { id: string; name: string };
-
-// 숫자 시리즈 패턴 타입
-type NumberFillPattern = {
-  axis: "row" | "col"; // "row" = 세로 방향 (행 인덱스 기준), "col" = 가로 방향 (열 인덱스 기준)
-  base: number; // 시리즈의 시작 값
-  step: number; // 공차
-  startIndex: number; // 사적 안덱스 (행/엷 ㅓㄴ호)
-};
 
 export type CellStyle = {
   fontSize?: number;
@@ -545,88 +544,6 @@ let __layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 function debounceLayoutSave(fn: () => void, ms = 500) {
   if (__layoutSaveTimer) clearTimeout(__layoutSaveTimer);
   __layoutSaveTimer = setTimeout(fn, ms);
-}
-
-/** selection 안에서
- *  - 세로 방향 (col 고정, row만 변화) 값 배열 추출
- */
-function collectColumnValues(
-  src: Rect,
-  col: number,
-  data: Record<string, string>,
-): number[] | null {
-  const out: number[] = [];
-  for (let r = src.sr; r <= src.er; r++) {
-    const raw = data[keyOf(r, col)];
-    if (raw == null || raw === "") return null;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return null;
-    out.push(n);
-  }
-  return out;
-}
-
-/** selection 안에서
- *  - 가로 방향 (row 고정, col만 변화) 값 배열 추출
- */
-function collectRowValues(
-  src: Rect,
-  row: number,
-  data: Record<string, string>,
-): number[] | null {
-  const out: number[] = [];
-  for (let c = src.sc; c <= src.ec; c++) {
-    const raw = data[keyOf(row, c)];
-    if (raw == null || raw === "") return null;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return null;
-    out.push(n);
-  }
-  return out;
-}
-
-/**
- * 선택 영역(src)과 타겟(tgt), 현재 데이터맵(prevData)를 기준으로
- * "숫자 등차 시리즈" 패턴이 있는지 추론.
- *
- * 전제:
- * - src는 1차원(한 행 또는 한 열)이어야 함
- * - tgt도 같은 축(같은 행 or 같은 열)으로만 확장된 경우에만 시리즈 적용
- * - src 내부 값들이 전부 number로 파싱 가능하고, 공차가 일정해야 함
- *
- * 조건을 만족하지 못하면 null을 반환 → 기존 타일링 로직으로 처리
- */
-/** 1차원 숫자 배열에서 등차 시리즈 패턴 추론 */
-function inferNumberFillPattern(
-  values: number[],
-  axis: "row" | "col",
-  startIndex: number,
-): NumberFillPattern | null {
-  if (values.length === 0) return null;
-
-  // 한 개 → 상수 시리즈
-  if (values.length === 1) {
-    return {
-      axis,
-      base: values[0],
-      step: 0,
-      startIndex,
-    };
-  }
-
-  const step = values[1] - values[0];
-  for (let i = 1; i < values.length - 1; i++) {
-    if (values[i + 1] - values[i] !== step) {
-      return null; // 등차 아니면 패턴 포기
-    }
-  }
-
-  return {
-    axis,
-    base: values[0],
-    step,
-    startIndex,
-  };
 }
 
 // persistDataDiff(oldData,newData)
@@ -1579,21 +1496,7 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       return;
     }
 
-    // --- 확장 방향 판별 ---
-    const verticalOnly =
-      tgt.sc === src.sc &&
-      tgt.ec === src.ec &&
-      (tgt.sr !== src.sr || tgt.er !== src.er);
-
-    const horizontalOnly =
-      tgt.sr === src.sr &&
-      tgt.er === src.er &&
-      (tgt.sc !== src.sc || tgt.ec !== src.ec);
-
-    let mode: "vertical" | "horizontal" | "tile" = "tile";
-    if (verticalOnly && !horizontalOnly) mode = "vertical";
-    else if (horizontalOnly && !verticalOnly) mode = "horizontal";
-    // 둘 다 변했거나(대각선) 판단 애매하면 그냥 타일링 모드
+    const mode = detectFillMode(src, tgt);
 
     // --- 패턴 추론 (열/행별) ---
     const colPatterns: Array<NumberFillPattern | null> = [];
