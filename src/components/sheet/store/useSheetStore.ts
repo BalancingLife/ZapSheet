@@ -5,6 +5,7 @@ import { a1ToPos } from "@/utils/a1Utils";
 import { evaluateFormulaToNumber } from "@/utils/formula";
 import { shiftFormulaByOffset } from "@/utils/shiftFormula";
 import { isNumericValue } from "@/utils/numberFormat";
+import { get2DGrid, gridToTSV } from "../utils/clipboard";
 import type { Dir, Pos, Rect } from "../types";
 import {
   clamp,
@@ -626,40 +627,6 @@ function inferNumberFillPattern(
     step,
     startIndex,
   };
-}
-
-// 선택된 셀 값들을 2D 배열 형태로 추출
-// DB나 클립보드로 내보내기 전에 “표 모양 그대로” 가져오는 역할.
-function get2DGrid(sel: Rect): string[][] {
-  const { getValue } = useSheetStore.getState();
-  const h = rectH(sel);
-  const w = rectW(sel);
-
-  // 빈 2D 배열 초기화:
-  // h=3, w=4 → [['','','',''], ['','','',''], ['','','','']]
-  const grid: string[][] = Array.from({ length: h }, () =>
-    Array<string>(w).fill(""),
-  );
-
-  //루프 돌며 실제 값 채우기:
-  // [['a','b','c','d'], ['e','f','g','h'], ['h','i','j','k']]
-  for (let r = 0; r < h; r++) {
-    for (let c = 0; c < w; c++) {
-      grid[r][c] = getValue(sel.sr + r, sel.sc + c) ?? ""; // undefined면 "" 로 초기화
-    }
-  }
-  return grid;
-}
-
-// 스프레드시트에서 “복사 → 붙여넣기” 할 때
-// 실제로 브라우저 클립보드에는 TSV(Tab-Separated Values) 형태로 저장됨
-// JS에서도 동일 포맷으로 변환해줘야 엑셀, 구글시트, ZapSheet끼리 서로 호환되는 복사/붙여넣기가 가능
-// 2D 배열 → TSV 문자열 (엑셀/시트 호환)
-const gridToTSV = (g: string[][]) => g.map((row) => row.join("\t")).join("\n"); // row 를 \t를 포함시켜서 잇고, 행들을 개행문자로 연결함
-// 엑셀 등에서 복사해 온 TSV 문자열을 우리 시트 내부 데이터 구조(string[][])로 복원
-export function tsvToGrid(tsv: string): string[][] {
-  const lines = tsv.replace(/\r/g, "").split("\n"); // 윈도우에서는 줄바꿈이 \r\n 으로 되어 있을 수 있어서 \r 제거
-  return lines.map((line) => line.split("\t")); // \n을 다시 행 단위로 나누고, \t을 쪼개 다시 열단위로 만듦
 }
 
 // persistDataDiff(oldData,newData)
@@ -1988,11 +1955,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
   // 선택된 영역을 복사 형식(TSV) 으로 만듦
   copySelectionToTSV: () => {
-    const { selection, stylesByCell } = get();
+    const { selection, stylesByCell, data } = get();
     if (!selection) return "";
 
     // 값 2D
-    const values = get2DGrid(selection);
+    const values = get2DGrid(selection, data);
 
     // 스타일 2D (없으면 null)
     const h = values.length;

@@ -10,7 +10,7 @@ import MergedCellOverlay from "./MergedCellOverlay";
 
 import { useSheetStore } from "./store/useSheetStore";
 import SheetSkeleton from "./SheetSkeleton";
-import { tsvToGrid } from "./store/useSheetStore";
+import { tsvToGrid } from "./utils/clipboard";
 
 export default function Sheet() {
   const loadCellData = useSheetStore((s) => s.loadCellData);
