@@ -726,6 +726,26 @@ function makeSnapshot(s: SheetState): HistorySnapshot {
   };
 }
 
+function getSharedBorderEdgeTarget(
+  row: number,
+  col: number,
+  edge: keyof CellBorder,
+): { row: number; col: number; edge: keyof CellBorder } | null {
+  if (edge === "top" && row > 0) {
+    return { row: row - 1, col, edge: "bottom" };
+  }
+  if (edge === "bottom" && row < ROW_COUNT - 1) {
+    return { row: row + 1, col, edge: "top" };
+  }
+  if (edge === "left" && col > 0) {
+    return { row, col: col - 1, edge: "right" };
+  }
+  if (edge === "right" && col < COLUMN_COUNT - 1) {
+    return { row, col: col + 1, edge: "left" };
+  }
+  return null;
+}
+
 // 위 border 유틸들이 실제로 렌더링에 적용되는 부분
 // React 컴포넌트에서 이렇게 쓰임
 // <div style={getBorderCss(row, col)} />
@@ -2422,13 +2442,22 @@ export const useSheetStore = create<SheetState>((set, get) => ({
 
     const touch: Array<{ row: number; col: number }> = [];
 
-    const applyEdge = (row: number, col: number, edge: keyof CellBorder) => {
+    const setEdge = (row: number, col: number, edge: keyof CellBorder) => {
       const k = keyOf(row, col);
       const prev = map[k] ?? {};
       const prevBorder: CellBorder = { ...(prev.border ?? {}) };
       prevBorder[edge] = { ...spec };
       map[k] = { ...prev, border: prevBorder };
       touch.push({ row, col });
+    };
+
+    const applyEdge = (row: number, col: number, edge: keyof CellBorder) => {
+      setEdge(row, col, edge);
+
+      const sharedTarget = getSharedBorderEdgeTarget(row, col, edge);
+      if (sharedTarget) {
+        setEdge(sharedTarget.row, sharedTarget.col, sharedTarget.edge);
+      }
     };
 
     if (!box) return;
@@ -2538,7 +2567,11 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       upsertMap.delete(k); // upsert로 찍혔던 거 취소
     };
 
-    const clearEdge = (row: number, col: number, edge: keyof CellBorder) => {
+    const clearSingleEdge = (
+      row: number,
+      col: number,
+      edge: keyof CellBorder,
+    ) => {
       const k = keyOf(row, col);
       const cur = map[k];
       if (!cur?.border) return;
@@ -2572,6 +2605,15 @@ export const useSheetStore = create<SheetState>((set, get) => ({
       const nextStyle: CellStyle = { ...cur, border: nextBorder };
       map[k] = nextStyle;
       markUpsert(row, col, nextStyle);
+    };
+
+    const clearEdge = (row: number, col: number, edge: keyof CellBorder) => {
+      clearSingleEdge(row, col, edge);
+
+      const sharedTarget = getSharedBorderEdgeTarget(row, col, edge);
+      if (sharedTarget) {
+        clearSingleEdge(sharedTarget.row, sharedTarget.col, sharedTarget.edge);
+      }
     };
 
     for (const { row, col } of targets) {

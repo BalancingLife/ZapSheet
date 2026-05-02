@@ -12,7 +12,8 @@
 }
 
 .focused {
-  border: 2px solid rgb(26, 115, 232);
+  outline: 2px solid rgb(26, 115, 232);
+  outline-offset: -2px;
 }
 
 .editorInput {
