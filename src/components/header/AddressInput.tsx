@@ -24,11 +24,6 @@ export default function AddressInput() {
     [selection]
   );
 
-  // 표시 텍스트 동기화(편집 중이 아닐 때)
-  useEffect(() => {
-    if (!editing) setDraft(label);
-  }, [label, editing]);
-
   // 편집 진입 시 포커스 + 전체 선택
   useEffect(() => {
     if (!editing || !inputRef.current) return;
@@ -74,7 +69,10 @@ export default function AddressInput() {
           type="button"
           className={`${styles.read} ${readOnly ? styles.readOnly : ""}`}
           onClick={() => {
-            if (!readOnly) setEditing(true);
+            if (!readOnly) {
+              setDraft(label);
+              setEditing(true);
+            }
           }}
           title={readOnly ? "읽기 전용(드래그 중)" : "클릭하여 주소 입력"}
           aria-label="주소/이름 박스"

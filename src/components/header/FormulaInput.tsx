@@ -71,7 +71,7 @@ export default function FormulaInput() {
     try {
       el.setSelectionRange(p, p);
     } catch {
-      console.log(" ");
+      // Some input states can reject selection updates; keeping the caret is best-effort.
     }
   }, [value, caret]);
 
