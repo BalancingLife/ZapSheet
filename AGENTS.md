@@ -1,489 +1,386 @@
 # AGENTS.md
 
-## Project Context
+## Core Principle: Compound Engineering
 
-ZapSheet is a lightweight spreadsheet-like web app built with React, TypeScript, Zustand, and Supabase.
+This repository follows a compound engineering workflow.
 
-This project is not a toy clone. It is used by a real user, so preserving existing behavior and saved data is more important than aggressive refactoring.
+Every task should not only solve the current problem, but also make future work easier, safer, and faster.
 
-ZapSheet includes spreadsheet-like features such as:
+Agents must optimize for:
+- reusable patterns
+- clear abstractions
+- small safe changes
+- automated verification
+- accumulated project knowledge
+- reduced future ambiguity
 
-- Cell editing
-- Cell selection
-- Range selection
-- Drag-based auto fill
-- Merged cells
-- Cell styles
-- Formula evaluation
-- Undo / Redo history
-- Clipboard copy and paste with TSV conversion
-- Multi-sheet support
-- Sheet metadata management
-- Row / column insertion and deletion
-- Row / column resizing
-- Autosave
-- Supabase remote sync
-
-The current goal is to improve maintainability, reliability, and portfolio readiness without breaking existing behavior.
+Do not treat each task as isolated. Treat each task as an opportunity to improve the system.
 
 ---
 
-## Core Principle
+## Working Loop
 
-Do not rewrite the whole app.
+For every non-trivial task, follow this loop:
 
-Prefer small, safe, incremental, reviewable changes.
+1. Understand
+2. Plan
+3. Implement
+4. Verify
+5. Explain
+6. Leave reusable knowledge
 
-The best refactor is one that:
-
-- Preserves current behavior
-- Reduces responsibility in large files
-- Improves type safety
-- Makes logic easier to test
-- Makes the project easier to explain in interviews
-- Does not break existing Supabase data
+Do not jump directly into code unless the change is very small.
 
 ---
 
-## Before Editing Files
+## 1. Understand
 
-Before editing any files, always write a proposal first.
+Before editing code, inspect the relevant files and existing patterns.
 
-Do not modify code until the user approves the plan.
+Identify:
+- the current architecture
+- related components, hooks, stores, APIs, types, and styles
+- naming conventions
+- existing reusable utilities
+- potential side effects
 
-Use this format:
+Prefer extending existing patterns over inventing new ones.
 
-# Change Proposal
-
-## 1. Summary
-
-Briefly summarize what you want to change.
-
-## 2. Target Area
-
-Explain which area you are targeting:
-
-- Coordinate/range utilities
-- Selection logic
-- Cell editing
-- Cell styles
-- Clipboard copy/paste
-- Auto-fill
-- Undo/redo
-- Formula evaluation
-- Multi-sheet logic
-- Autosave/Supabase sync
-- UI/UX improvement
-- Type cleanup
-
-Also list the files likely to be affected.
-
-## 3. Current Problem
-
-Explain the current issue in the existing code.
-
-Look for:
-
-- Too much responsibility in one file
-- Store logic that can become pure utility functions
-- Duplicated logic
-- Unclear names
-- Weak types or `any`
-- Coupled logic that is hard to test
-- Risky side effects
-- UI and business logic mixed together
-
-## 4. Proposed Change
-
-Explain exactly what you propose to do.
-
-Be specific:
-
-- Functions to extract
-- Types to create or improve
-- Files to create
-- Files to modify
-- Logic to keep unchanged
-- Behavior to preserve
-
-## 5. Why This Change
-
-Explain why this change is worth doing.
-
-Connect it to:
-
-- Maintainability
-- Readability
-- Type safety
-- Testability
-- Smaller store responsibility
-- Safer future feature development
-- Better portfolio/interview explanation
-
-## 6. Risk Analysis
-
-Explain what could break.
-
-Pay special attention to:
-
-- Supabase sync
-- Autosave
-- Undo/redo
-- Copy/paste
-- Merged cells
-- Formula evaluation
-- Multi-sheet data isolation
-- Existing saved data compatibility
-
-Classify the risk as:
-
-- Low
-- Medium
-- High
-
-And explain why.
-
-## 7. Risk Mitigation Plan
-
-Explain how you will reduce risk.
-
-Use principles like:
-
-- Small diff
-- Pure function extraction first
-- Preserve existing public function signatures where possible
-- Avoid DB schema changes
-- Avoid UI redesign
-- Avoid changing persisted data shape
-- Add or preserve fallback behavior
-
-## 8. Execution Steps
-
-Break the work into small steps.
-
-Use this format:
-
-### Step 1
-
-- Work:
-- Reason:
-- Risk:
-- Files touched:
-
-### Step 2
-
-- Work:
-- Reason:
-- Risk:
-- Files touched:
-
-### Step 3
-
-- Work:
-- Reason:
-- Risk:
-- Files touched:
-
-## 9. Acceptance Criteria
-
-The change is acceptable only if:
-
-- Existing spreadsheet behavior still works
-- TypeScript passes
-- Build passes
-- No core feature is removed
-- Existing Supabase data remains compatible
-- Undo/redo still works if touched
-- Copy/paste still works if touched
-- Multi-sheet behavior still works if touched
-- The diff is reviewable
-- The code is easier to explain after the change
-
-## 10. Manual Test Checklist
-
-Provide a checklist the user can run manually after the change.
-
-Include only relevant tests, but consider:
-
-- Cell editing
-- Cell selection
-- Range selection
-- Drag auto-fill
-- Copy/paste
-- Undo/redo
-- Sheet add/delete/rename/switch
-- Autosave
-- Refresh persistence
-- Formula evaluation
-- Merged cells
-- Row/column resize
-- Row/column insertion/deletion
-
-## 11. Do Not Touch
-
-List files or behavior that should not be touched in this change.
-
-## 12. Approval Request
-
-End with exactly this sentence:
-
-"Please review this proposal. I will not edit files until you approve the plan."
+If the request is ambiguous, make the safest reasonable assumption and state it in the plan.
 
 ---
 
-## High-Risk Areas
+## 2. Plan Before Coding
 
-Be extra careful with the following areas:
+Before implementation, provide a short plan containing:
 
-- Supabase sync
-- Autosave
-- Undo / Redo
-- Multi-sheet behavior
-- Clipboard copy / paste
-- Formula evaluation
-- Cell merge behavior
-- Row / column insertion and deletion
-- Existing persisted data shape
+- What will be changed
+- Why this approach fits the existing codebase
+- Files likely to be touched
+- Risks or edge cases
+- How the result will be verified
 
-Do not change the database schema unless explicitly requested.
-
-Do not change the saved data format unless explicitly requested.
-
-Do not introduce migrations unless explicitly requested.
+Do not over-plan. Keep the plan practical and execution-oriented.
 
 ---
 
-## Refactoring Priority
+## 3. Implement Small, Composable Changes
 
-Preferred order:
+Make changes that are easy to review.
 
-1. Coordinate and range utilities
-2. Clipboard utilities
-3. Auto-fill utilities
-4. Type cleanup
-5. UI state cleanup
-6. Autosave status improvement
-7. Store responsibility separation
-8. Undo/redo internal cleanup
-9. Supabase sync cleanup
+Prefer:
+- small functions over large functions
+- clear names over clever code
+- existing components over new components
+- existing state management patterns over new ones
+- explicit types over implicit assumptions
+- predictable data flow over hidden side effects
 
-Start with the safest extraction target.
-
-Good first candidates:
-
-- Pure utility functions
-- Coordinate helpers
-- Range helpers
-- TSV parsing/serialization helpers
-- Auto-fill pattern inference helpers
-- Type definitions
-
-Avoid starting with:
-
-- Autosave rewrite
-- Undo/redo rewrite
-- Supabase schema change
-- Large UI redesign
-- Full store rewrite
+Avoid:
+- unrelated refactoring
+- broad rewrites
+- changing public APIs without need
+- mixing feature work and cleanup in the same change
+- adding dependencies unless clearly justified
 
 ---
 
-## Coding Guidelines
+## 4. Compound the Codebase
 
-Follow the existing project style.
+When solving a problem, look for reusable improvements.
 
-Keep changes small.
+If the same pattern appears multiple times, consider extracting:
+- a utility function
+- a custom hook
+- a shared component
+- a shared type
+- a constants file
+- a validation helper
+- a test helper
 
-Prefer explicit names over clever abstractions.
+However, do not abstract too early. Only extract when it clearly reduces duplication or future risk.
 
-Prefer pure functions when extracting logic.
-
-Avoid unnecessary abstractions.
-
-Avoid introducing new libraries unless clearly justified.
-
-Avoid `any`.
-
-Improve types gradually.
-
-Add comments only when the reason is not obvious from the code.
-
-Preserve existing behavior by default.
-
-If behavior changes are needed, explain them in the proposal first.
+Each completed task should leave the codebase easier to modify next time.
 
 ---
 
-## State Management Guidelines
+## 5. Verification Required
 
-The Zustand store should not become a dumping ground for every feature.
+After implementation, verify the change.
 
-When possible, separate:
+Use the strongest available checks for this repository:
 
-- Domain types
-- Pure utility functions
-- Store actions
-- Supabase persistence logic
-- UI-only state
-- Derived calculations
+- type check
+- lint
+- unit tests
+- integration tests
+- build
+- manual behavior check
 
-However, do not split everything at once.
+If a check cannot be run, explain why.
 
-Prefer incremental extraction.
-
-Do not change public store APIs unless necessary.
-
-If changing store APIs, update all call sites carefully and explain the risk.
+Never claim something works unless it has been verified or clearly marked as unverified.
 
 ---
 
-## Supabase Guidelines
+## 6. Self-Review Before Final Answer
 
-Supabase-related changes are high-risk.
+Before finishing, review the diff as if you are reviewing a pull request.
 
-Before modifying Supabase sync or autosave logic, explain:
+Check:
+- Does this solve the actual request?
+- Did I change anything unrelated?
+- Are names clear?
+- Are edge cases handled?
+- Are types safe?
+- Is the UI behavior consistent?
+- Is the code easier to work with than before?
+- Is there any duplicated logic that should be extracted?
+- Did I leave unnecessary console logs, comments, or dead code?
 
-- What data is currently saved
-- When it is saved
-- Which tables are affected
-- Whether the persisted data shape changes
-- How refresh persistence will be tested
-
-Do not change table names, column names, or schema shape unless explicitly requested.
-
-Existing user data must remain compatible.
-
----
-
-## Autosave Guidelines
-
-Autosave improvements should prioritize reliability and user trust.
-
-Recommended save statuses:
-
-- idle
-- saving
-- saved
-- error
-
-If implementing or changing autosave status, ensure:
-
-- The UI does not lie about saved state
-- Failed saves do not crash the app
-- Retry behavior is clear
-- Duplicate saves are avoided where reasonable
-- Existing save behavior is preserved unless explicitly changed
+Fix obvious issues before responding.
 
 ---
 
-## UI/UX Guidelines
+## 7. Leave Knowledge Behind
 
-Do not do large visual redesigns unless explicitly requested.
+At the end of a task, provide a short summary that helps future work.
 
-Small practical improvements are preferred:
+Include:
+- what changed
+- why it changed
+- how it was verified
+- any new reusable pattern introduced
+- remaining risks or follow-up ideas
 
-- Save status indicator
-- Error message
-- Retry button
-- Better empty state
-- Better loading state
-- Keyboard shortcut guide
-- CSV export button
-- Clearer sheet rename UX
-
-Any UI change should support real user stability, not just decoration.
+If the task reveals an important project convention, suggest adding it to this file.
 
 ---
 
-## Portfolio Readiness
+## 8. Multi-Agent / Parallel Work Rules
 
-When making changes, try to make the project easier to explain in interviews.
+When multiple agents work in parallel:
 
-Good explanations include:
+- each agent must work on a separate branch
+- each agent must own a clearly separated task
+- avoid editing the same files unless necessary
+- each agent must summarize touched files and risks
+- each agent must provide verification results
+- final integration must be done by a human or a dedicated integration pass
 
-- Responsibility separation
-- Store complexity reduction
-- Pure function extraction
-- Type safety improvement
-- Autosave reliability improvement
-- Real-user UX improvement
-- Data structure reasoning
-- Performance consideration
+Recommended roles:
 
-After each approved change, summarize:
+### Planner Agent
+- Reads the codebase
+- Produces implementation plan
+- Identifies files, risks, and verification strategy
+- Does not write production code unless asked
 
-- What changed
-- Why it changed
-- What risk was avoided
-- How to test it
-- How to explain it in an interview
+### Builder Agent
+- Implements the planned change
+- Keeps the diff small
+- Follows existing project conventions
+- Adds or updates tests when appropriate
 
----
+### Reviewer Agent
+- Reviews the diff
+- Looks for bugs, regressions, unnecessary complexity, and missed edge cases
+- Suggests concrete fixes
+- Does not rewrite everything unless necessary
 
-## Validation Commands
+### Refactor Agent
+- Improves structure after behavior is working
+- Extracts reusable patterns
+- Removes duplication
+- Preserves existing behavior
 
-After code changes, run the appropriate checks based on the project setup.
-
-Prefer commands such as:
-
-- npm run typecheck
-- npm run lint
-- npm run build
-- npm run test
-
-If a command does not exist, do not invent a new setup unless requested.
-
-Instead, report that the command is unavailable.
-
----
-
-## Manual Testing Requirement
-
-After every change, provide a manual test checklist.
-
-At minimum, consider:
-
-- Can the app load?
-- Can a cell be edited?
-- Can a range be selected?
-- Can copy/paste still work?
-- Can undo/redo still work?
-- Can sheets be switched?
-- Does data persist after refresh?
-- Does autosave still work?
-- Did any touched feature regress?
+### Test Agent
+- Adds or improves tests
+- Checks important user flows
+- Looks for failure cases
+- Confirms that the change is safe
 
 ---
 
-## Forbidden Actions
+## 9. Branch Strategy
 
-Do not:
+Use separate branches for separate tasks.
 
-- Rewrite the entire app
-- Replace Zustand with another state library
-- Replace Supabase with another backend
-- Change the DB schema without explicit approval
-- Remove existing features
-- Remove existing data compatibility
-- Introduce a large design system rewrite
-- Make broad formatting-only changes across unrelated files
-- Mix multiple unrelated refactors in one diff
-- Hide risky behavior changes inside a refactor
+Branch naming examples:
+
+- feature/add-user-profile
+- fix/header-layout-shift
+- refactor/extract-carousel-hook
+- test/add-auth-flow-tests
+- chore/update-agent-rules
+
+Do not stack multiple unrelated tasks in one branch.
+
+If a branch contains unrelated work, split it before opening a pull request.
 
 ---
 
-## Preferred Working Style
+## 10. Commit Style
 
-Work like a careful senior engineer.
+Use this commit format:
 
-For each task:
+gitmoji: concise summary
 
-1. Inspect the current code
-2. Propose the change
-3. Wait for approval
-4. Make a small diff
-5. Explain what changed
-6. Explain how to test it
-7. Mention any remaining risk
+- 1
+- 2
 
-When uncertain, choose the safer option.
+Example:
+
+✨: 장소 저장 탭 UI 추가
+
+- 저장한 장소와 인기 장소 탭 전환 구조 추가
+- 탭 상태에 따라 아이콘과 리스트 데이터를 분리
+
+---
+
+## 11. Pull Request Summary Format
+
+When preparing a PR or final response, use this format:
+
+## Summary
+
+- 
+
+## Why
+
+- 
+
+## Changes
+
+- 
+
+## Verification
+
+- [ ] Type check
+- [ ] Lint
+- [ ] Test
+- [ ] Build
+- [ ] Manual check
+
+## Risks
+
+- 
+
+## Follow-up
+
+- 
+
+---
+
+## 12. Code Style Preferences
+
+Follow the existing style of the repository.
+
+General preferences:
+
+- Use TypeScript safely.
+- Prefer readable code over clever code.
+- Avoid unnecessary comments.
+- Comments should explain why, not what.
+- Keep functions focused.
+- Keep component logic separated from UI when complexity grows.
+- Prefer custom hooks for reusable stateful logic.
+- Prefer shared types for API response/request contracts.
+- Avoid console logs in committed code.
+- Avoid magic numbers and unexplained constants.
+
+---
+
+## 13. Frontend Guidelines
+
+When working on frontend code:
+
+- Preserve existing UI/UX patterns.
+- Keep components reusable but not over-abstracted.
+- Separate business logic from rendering when possible.
+- Prefer controlled state flow.
+- Keep responsive behavior in mind.
+- Avoid layout changes outside the requested scope.
+- Check loading, empty, error, and success states.
+- Make interaction states clear: disabled, active, selected, pending.
+
+For React:
+
+- Use hooks intentionally.
+- Avoid unnecessary useEffect.
+- Avoid unnecessary memoization.
+- Use useMemo/useCallback only when there is a real reason.
+- Keep derived state derived instead of duplicating it in state.
+- Prefer functional state updates when next state depends on previous state.
+
+---
+
+## 14. Backend / API Guidelines
+
+When working on backend or API-related code:
+
+- Keep DTOs aligned with frontend usage.
+- Validate inputs at boundaries.
+- Return predictable response shapes.
+- Use clear status codes.
+- Keep business logic out of controllers when possible.
+- Avoid leaking database details directly to the client.
+- Handle error cases explicitly.
+- Keep API contracts documented through types or examples.
+
+---
+
+## 15. Database Guidelines
+
+When changing database or Prisma schema:
+
+- Explain why the schema change is needed.
+- Consider migration impact.
+- Keep relations explicit.
+- Use indexes when query patterns justify them.
+- Avoid unnecessary nullable fields.
+- Keep naming consistent.
+- Check whether the frontend DTO needs to change.
+
+Do not modify schema casually.
+
+---
+
+## 16. AI Agent Behavior Rules
+
+Agents should act like careful senior collaborators.
+
+Agents must:
+- inspect before editing
+- plan before large changes
+- explain tradeoffs
+- preserve existing behavior
+- minimize unnecessary diff
+- verify work
+- document reusable learnings
+
+Agents must not:
+- hallucinate files or APIs
+- invent project conventions
+- silently skip verification
+- make broad rewrites without reason
+- add dependencies without justification
+- hide uncertainty
+- claim completion without evidence
+
+---
+
+## 17. Definition of Done
+
+A task is done only when:
+
+- the requested behavior is implemented
+- the code follows existing patterns
+- important edge cases are handled
+- verification has been run or clearly marked as not run
+- the final summary explains what changed and why
+- future maintainers can understand the change quickly
+
+The goal is not just to finish the task.
+
+The goal is to make the next task easier.
